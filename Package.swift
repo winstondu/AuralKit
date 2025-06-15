@@ -1,12 +1,12 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "AuralKit",
     platforms: [
-        .iOS(.v18),
-        .macOS(.v15),
-        .visionOS(.v2)
+        .iOS(.v26),
+        .macOS(.v26),
+        .visionOS(.v26)
     ],
     products: [
         .library(
@@ -16,11 +16,19 @@ let package = Package(
     ],
     targets: [
         .target(
-            name: "AuralKit"
+            name: "AuralKit",
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency"),
+                .enableExperimentalFeature("AccessLevelOnImport")
+            ]
         ),
         .testTarget(
             name: "AuralKitTests",
-            dependencies: ["AuralKit"]
+            dependencies: ["AuralKit"],
+            swiftSettings: [
+                .enableUpcomingFeature("StrictConcurrency"),
+                .enableExperimentalFeature("AccessLevelOnImport")
+            ]
         )
     ]
 )

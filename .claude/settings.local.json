@@ -3,8 +3,16 @@
     "allow": [
       "Bash(mkdir:*)",
       "Bash(swift build)",
-      "Bash(swift test)"
+      "Bash(swift test)",
+      "WebFetch(domain:developer.apple.com)",
+      "Bash(rm:*)",
+      "Bash(swift build:*)",
+      "Bash(xcrun --toolchain com.apple.dt.toolchain.XcodeDefault swift build)",
+      "Bash(xcrun:*)",
+      "Bash(xcode-select:*)",
+      "Bash(swift test:*)"
     ],
-    "deny": []
+    "deny": [],
+    "includeCoAuthoredBy": false
   }
 }
