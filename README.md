@@ -1,0 +1,2 @@
+# AuralKit
+Easily use SpeechAnalyzerAPI
