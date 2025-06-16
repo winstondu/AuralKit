@@ -1,5 +1,5 @@
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import Speech
 
 /// Buffer converter for audio format conversion
@@ -164,10 +164,13 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     }
 }
 
-internal actor AuralAudioEngine: AudioEngineProtocol {
+/// Dedicated audio processor that handles ALL audio operations within a single actor
+/// This ensures AVAudioPCMBuffer never crosses actor boundaries, avoiding Sendable issues
+internal actor AuralAudioProcessor {
     private let audioEngine = AVAudioEngine()
     private var audioFile: AVAudioFile?
-    private var outputContinuation: AsyncStream<AVAudioPCMBuffer>.Continuation?
+    private var speechAnalyzer: AuralSpeechAnalyzer?
+    private let bufferConverter = BufferConverter()
     
     var audioFormat: AVAudioFormat? {
         audioEngine.inputNode.outputFormat(forBus: 0)
@@ -186,8 +189,10 @@ internal actor AuralAudioEngine: AudioEngineProtocol {
         }
     }
     
-    func startRecording() async throws {
+    func startRecording(with speechAnalyzer: AuralSpeechAnalyzer) async throws {
         guard !isRecording else { return }
+        
+        self.speechAnalyzer = speechAnalyzer
         
         #if os(iOS)
         try setUpAudioSession()
@@ -195,14 +200,24 @@ internal actor AuralAudioEngine: AudioEngineProtocol {
         
         try setupAudioEngine()
         
-        // Install tap on input node
+        // Install tap and process buffers with immediate conversion to avoid Sendable issues
         audioEngine.inputNode.installTap(
             onBus: 0,
             bufferSize: 4096,
             format: audioEngine.inputNode.outputFormat(forBus: 0)
-        ) { [weak self] buffer, time in
-            Task { [weak self] in
-                await self?.handleAudioBuffer(buffer)
+        ) { [weak self, weak speechAnalyzer] buffer, time in
+            // Convert buffer synchronously within callback to avoid actor boundary issues
+            guard let self, let speechAnalyzer else { return }
+            
+            // Extract raw audio data synchronously to pass across boundaries
+            let frameLength = buffer.frameLength
+            let format = buffer.format
+            
+            // Copy audio data synchronously within the callback
+            let data = Data(bytes: buffer.floatChannelData![0], count: Int(frameLength) * MemoryLayout<Float>.size)
+            
+            Task {
+                await self.processAudioData(data, frameLength: frameLength, format: format, speechAnalyzer: speechAnalyzer)
             }
         }
         
@@ -216,8 +231,7 @@ internal actor AuralAudioEngine: AudioEngineProtocol {
         
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
-        outputContinuation?.finish()
-        outputContinuation = nil
+        speechAnalyzer = nil
         isRecording = false
     }
     
@@ -251,18 +265,89 @@ internal actor AuralAudioEngine: AudioEngineProtocol {
         audioEngine.inputNode.removeTap(onBus: 0)
     }
     
-    func audioStream() -> AsyncStream<AVAudioPCMBuffer> {
-        return AsyncStream(AVAudioPCMBuffer.self, bufferingPolicy: .unbounded) { continuation in
-            outputContinuation = continuation
+    /// Process audio buffer entirely within this actor - no Sendable violations!
+    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async {
+        do {
+            // Write to file if available
+            try audioFile?.write(from: buffer)
+            
+            // Process the buffer for speech recognition
+            // Buffer never leaves this actor, so no Sendable issues
+            if let speechAnalyzer {
+                try await speechAnalyzer.processAudioBuffer(buffer)
+            }
+        } catch {
+            print("Audio buffer processing error: \(error)")
         }
     }
     
-    private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer) {
-        // Write to file if available
-        try? audioFile?.write(from: buffer)
-        
-        // Yield buffer for processing
-        outputContinuation?.yield(buffer)
+    /// Process audio data that was extracted synchronously from the callback
+    func processAudioData(_ data: Data, frameLength: AVAudioFrameCount, format: AVAudioFormat, speechAnalyzer: AuralSpeechAnalyzer) async {
+        do {
+            // Reconstruct buffer within the actor from the copied data
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameLength) else {
+                print("Failed to create audio buffer")
+                return
+            }
+            
+            buffer.frameLength = frameLength
+            
+            // Copy data back to buffer
+            data.withUnsafeBytes { bytes in
+                let floatPtr = bytes.bindMemory(to: Float.self)
+                buffer.floatChannelData![0].update(from: floatPtr.baseAddress!, count: Int(frameLength))
+            }
+            
+            // Now process within actor
+            try audioFile?.write(from: buffer)
+            try await speechAnalyzer.processAudioBuffer(buffer)
+            
+        } catch {
+            print("Audio data processing error: \(error)")
+        }
+    }
+}
+
+/// Simplified audio engine protocol that works with the dedicated processor
+internal actor AuralAudioEngine: AudioEngineProtocol {
+    private let processor = AuralAudioProcessor()
+    
+    var audioFormat: AVAudioFormat? {
+        get async {
+            await processor.audioFormat
+        }
+    }
+    
+    var isRecording: Bool {
+        get async {
+            await processor.isRecording
+        }
+    }
+    
+    func requestPermission() async -> Bool {
+        await processor.requestPermission()
+    }
+    
+    func startRecording() async throws {
+        // This will be handled by the speech analyzer calling processor directly
+        throw AuralError.audioSetupFailed
+    }
+    
+    func stopRecording() async throws {
+        try await processor.stopRecording()
+    }
+    
+    func pauseRecording() async throws {
+        try await processor.pauseRecording()
+    }
+    
+    func resumeRecording() async throws {
+        try await processor.resumeRecording()
+    }
+    
+    /// Get access to the audio processor for direct integration
+    nonisolated func getProcessor() -> AuralAudioProcessor {
+        processor
     }
 }
 

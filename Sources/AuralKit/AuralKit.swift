@@ -229,8 +229,13 @@ extension AuralKit {
         do {
             try await prepareForTranscription()
             try await engine.speechAnalyzer.configure(with: configuration)
-            try await engine.audioEngine.startRecording()
             try await engine.speechAnalyzer.startAnalysis()
+            
+            // Start audio recording with direct integration to speech analyzer
+            if let audioEngine = engine.audioEngine as? AuralAudioEngine {
+                let processor = audioEngine.getProcessor()
+                try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+            }
             
             var finalText = ""
             
@@ -273,14 +278,19 @@ extension AuralKit {
         do {
             try await prepareForTranscription()
             try await engine.speechAnalyzer.configure(with: configuration)
-            try await engine.audioEngine.startRecording()
             try await engine.speechAnalyzer.startAnalysis()
             
-            // Note: Simplified for compilation - full concurrency handling needed in production
+            // Start audio recording with direct integration to speech analyzer
+            if let audioEngine = engine.audioEngine as? AuralAudioEngine {
+                let processor = audioEngine.getProcessor()
+                try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+            }
+            
             transcriptionTask = Task { @MainActor in
                 for await result in engine.speechAnalyzer.results {
                     if configuration.includePartialResults || !result.isPartial {
                         onResult(result)
+                        currentText = result.text
                     }
                 }
             }
