@@ -13,7 +13,7 @@ import Foundation
 ///     .startTranscribing()
 /// ```
 public enum AuralLanguage: Sendable, Hashable {
-    /// English (United States) locale
+    /// English (current locale or United States) 
     case english
     
     /// Spanish (Spain) locale  
@@ -40,6 +40,11 @@ public enum AuralLanguage: Sendable, Hashable {
     var locale: Locale {
         switch self {
         case .english:
+            // Use current locale if it's English, otherwise default to en-US
+            let current = Locale.current
+            if current.language.languageCode?.identifier == "en" {
+                return current
+            }
             return Locale(identifier: "en-US")
         case .spanish:
             return Locale(identifier: "es-ES")

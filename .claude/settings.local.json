@@ -15,7 +15,9 @@
       "Bash(mv:*)",
       "Bash(cp:*)",
       "Bash(xcodegen generate:*)",
-      "Bash(open:*)"
+      "Bash(open:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false

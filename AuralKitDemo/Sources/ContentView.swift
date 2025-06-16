@@ -1,7 +1,10 @@
 import SwiftUI
 import AuralKit
+import OSLog
 
 struct ContentView: View {
+    private static let logger = Logger(subsystem: "com.auralkit.demo", category: "ContentView")
+    
     @State private var auralKit = AuralKit()
     @State private var selectedLanguage: AuralLanguage = .english
     @State private var selectedQuality: AuralQuality = .medium
@@ -24,7 +27,7 @@ struct ContentView: View {
                 }
         }
         #else
-        NavigationView {
+        NavigationStack {
             mainContent
                 .navigationTitle("AuralKit Demo")
                 .toolbar {
@@ -187,9 +190,21 @@ struct ContentView: View {
     private func toggleLiveTranscription() {
         Task {
             do {
+                Self.logger.debug("Starting toggle operation...")
                 try await auralKit.toggle()
+                Self.logger.debug("Toggle completed successfully")
             } catch {
-                print("Live transcription error: \(error)")
+                Self.logger.error("Live transcription error: \(error)")
+                // Update UI with error
+                await MainActor.run {
+                    // Force update the UI state if there's an error
+                    if auralKit.isTranscribing {
+                        // Force stop if there's an issue
+                        Task {
+                            try? await auralKit.stopTranscription()
+                        }
+                    }
+                }
             }
         }
     }
@@ -197,19 +212,23 @@ struct ContentView: View {
     private func performOneShotTranscription() {
         Task {
             do {
+                Self.logger.debug("Starting one-shot transcription...")
                 let configuredAuralKit = AuralKit()
                     .language(selectedLanguage)
                     .quality(selectedQuality)
                     .includePartialResults(includePartialResults)
                     .includeTimestamps(includeTimestamps)
                 
+                Self.logger.debug("Configuration set, starting transcription...")
                 let result = try await configuredAuralKit.startTranscribing()
+                Self.logger.debug("One-shot transcription result: '\(result)'")
                 
                 await MainActor.run {
                     oneShotResult = result.isEmpty ? "No speech detected" : result
                     showingOneShotResult = true
                 }
             } catch {
+                Self.logger.error("One-shot transcription error: \(error)")
                 await MainActor.run {
                     oneShotResult = "Error: \(error.localizedDescription)"
                     showingOneShotResult = true

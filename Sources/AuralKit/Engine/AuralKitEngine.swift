@@ -1,6 +1,7 @@
 import Foundation
 @preconcurrency import AVFoundation
 import Speech
+import OSLog
 
 /// Buffer converter for audio format conversion
 internal final class BufferConverter: @unchecked Sendable {
@@ -64,6 +65,8 @@ internal struct AuralKitEngine: AuralKitEngineProtocol, Sendable {
 }
 
 internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
+    private static let logger = Logger(subsystem: "com.auralkit", category: "SpeechAnalyzer")
+    
     private let (stream, continuation) = AsyncStream.makeStream(of: AuralResult.self)
     private var speechAnalyzer: SpeechAnalyzer?
     private var speechTranscriber: SpeechTranscriber?
@@ -77,6 +80,12 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     }
     
     func configure(with configuration: AuralConfiguration) async throws {
+        Self.logger.debug("Configure starting with locale: \(configuration.language.locale.identifier)")
+        
+        // Request Speech recognition permission first
+        try await requestSpeechPermission()
+        Self.logger.debug("Speech permission obtained")
+        
         // Create transcriber with the specified language
         speechTranscriber = SpeechTranscriber(
             locale: configuration.language.locale,
@@ -86,30 +95,44 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         )
         
         guard let speechTranscriber else {
+            Self.logger.error("Failed to create SpeechTranscriber")
             throw AuralError.recognitionFailed
         }
+        Self.logger.debug("SpeechTranscriber created successfully")
+        
+        // Ensure the model is available for this language
+        try await ensureModel(for: speechTranscriber, locale: configuration.language.locale)
+        Self.logger.debug("Model ensured for locale")
         
         // Create analyzer with the transcriber
         speechAnalyzer = SpeechAnalyzer(modules: [speechTranscriber])
+        Self.logger.debug("SpeechAnalyzer created with transcriber")
         
         // Set up input stream
         (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
+        Self.logger.debug("Input stream configured")
     }
     
     func startAnalysis() async throws {
+        Self.logger.debug("Starting speech analysis")
         guard let speechAnalyzer, let speechTranscriber, let inputSequence else {
+            Self.logger.error("Missing components - analyzer: \(self.speechAnalyzer != nil), transcriber: \(self.speechTranscriber != nil), inputSequence: \(self.inputSequence != nil)")
             throw AuralError.recognitionFailed
         }
         
         // Start the analyzer
+        Self.logger.debug("Starting SpeechAnalyzer...")
         try await speechAnalyzer.start(inputSequence: inputSequence)
+        Self.logger.debug("SpeechAnalyzer started successfully")
         
         // Start processing results
         recognizerTask = Task { [weak self] in
             guard let self else { return }
             
+            Self.logger.debug("Starting to process speech results...")
             do {
                 for try await result in speechTranscriber.results {
+                    Self.logger.debug("Received speech result: '\(String(result.text.characters))', isFinal: \(result.isFinal)")
                     let auralResult = AuralResult(
                         text: String(result.text.characters),
                         confidence: 1.0, // SpeechTranscriber doesn't provide confidence in the new API
@@ -119,9 +142,10 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
                     
                     await self.yieldResult(auralResult)
                 }
+                Self.logger.debug("Speech results processing completed")
             } catch {
                 // Handle speech recognition errors
-                print("Speech recognition error: \(error)")
+                Self.logger.error("Speech recognition error in results loop: \(error)")
             }
         }
     }
@@ -141,18 +165,25 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     }
     
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
+        Self.logger.debug("Processing audio buffer with frameLength: \(buffer.frameLength)")
         guard let inputBuilder else {
+            Self.logger.error("No inputBuilder available")
             throw AuralError.audioSetupFailed
         }
         
         // Get the best available format for the speech analyzer
         guard let speechTranscriber,
               let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [speechTranscriber]) else {
+            Self.logger.error("Failed to get analyzer format")
             throw AuralError.audioSetupFailed
         }
         
+        Self.logger.debug("Converting buffer from \(buffer.format.sampleRate)Hz to \(analyzerFormat.sampleRate)Hz")
+        
         // Convert buffer to the required format
         let convertedBuffer = try bufferConverter.convertBuffer(buffer, to: analyzerFormat)
+        
+        Self.logger.debug("Buffer converted successfully, yielding to speech analyzer")
         
         // Create analyzer input and yield it
         let input = AnalyzerInput(buffer: convertedBuffer)
@@ -162,11 +193,55 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     private func yieldResult(_ result: AuralResult) {
         continuation.yield(result)
     }
+    
+    /// Request Speech recognition permission - following Apple's sample
+    private func requestSpeechPermission() async throws {
+        // Apple's sample doesn't explicitly request speech permission 
+        // as it's handled automatically by the SpeechTranscriber
+        // We keep this for explicit permission handling if needed
+        return
+    }
+    
+    /// Ensure the speech model is available - following Apple's sample approach
+    private func ensureModel(for transcriber: SpeechTranscriber, locale: Locale) async throws {
+        // Following Apple's sample pattern from SpokenWordTranscriber.ensureModel
+        guard await supported(locale: locale) else {
+            throw AuralError.unsupportedLanguage
+        }
+        
+        if await installed(locale: locale) {
+            return
+        } else {
+            try await downloadIfNeeded(for: transcriber)
+        }
+    }
+    
+    private func supported(locale: Locale) async -> Bool {
+        let supported = await SpeechTranscriber.supportedLocales
+        return supported.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
+    }
+
+    private func installed(locale: Locale) async -> Bool {
+        let installed = await Set(SpeechTranscriber.installedLocales)
+        return installed.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
+    }
+
+    private func downloadIfNeeded(for module: SpeechTranscriber) async throws {
+        if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
+            do {
+                try await downloader.downloadAndInstall()
+            } catch {
+                throw AuralError.networkError
+            }
+        }
+    }
 }
 
 /// Dedicated audio processor that handles ALL audio operations within a single actor
 /// This ensures AVAudioPCMBuffer never crosses actor boundaries, avoiding Sendable issues
 internal actor AuralAudioProcessor {
+    private static let logger = Logger(subsystem: "com.auralkit", category: "AudioProcessor")
+    
     private let audioEngine = AVAudioEngine()
     private var audioFile: AVAudioFile?
     private var speechAnalyzer: AuralSpeechAnalyzer?
@@ -190,15 +265,22 @@ internal actor AuralAudioProcessor {
     }
     
     func startRecording(with speechAnalyzer: AuralSpeechAnalyzer) async throws {
-        guard !isRecording else { return }
+        Self.logger.debug("Starting audio recording")
+        guard !isRecording else { 
+            Self.logger.debug("Already recording, returning")
+            return 
+        }
         
         self.speechAnalyzer = speechAnalyzer
+        Self.logger.debug("Speech analyzer set")
         
         #if os(iOS)
         try setUpAudioSession()
+        Self.logger.debug("Audio session set up")
         #endif
         
         try setupAudioEngine()
+        Self.logger.debug("Audio engine set up")
         
         // Install tap and process buffers with immediate conversion to avoid Sendable issues
         audioEngine.inputNode.installTap(
@@ -207,23 +289,35 @@ internal actor AuralAudioProcessor {
             format: audioEngine.inputNode.outputFormat(forBus: 0)
         ) { [weak self, weak speechAnalyzer] buffer, time in
             // Convert buffer synchronously within callback to avoid actor boundary issues
-            guard let self, let speechAnalyzer else { return }
+            guard let self, let speechAnalyzer else { 
+                Task { Self.logger.error("Audio tap callback - missing self or speechAnalyzer") }
+                return 
+            }
+            
+            Task { Self.logger.debug("Audio tap callback received buffer with frameLength: \(buffer.frameLength)") }
             
             // Extract raw audio data synchronously to pass across boundaries
             let frameLength = buffer.frameLength
             let format = buffer.format
             
+            guard frameLength > 0, let channelData = buffer.floatChannelData else {
+                Task { Self.logger.error("Invalid audio buffer - frameLength: \(frameLength), channelData: \(buffer.floatChannelData != nil)") }
+                return
+            }
+            
             // Copy audio data synchronously within the callback
-            let data = Data(bytes: buffer.floatChannelData![0], count: Int(frameLength) * MemoryLayout<Float>.size)
+            let data = Data(bytes: channelData[0], count: Int(frameLength) * MemoryLayout<Float>.size)
             
             Task {
                 await self.processAudioData(data, frameLength: frameLength, format: format, speechAnalyzer: speechAnalyzer)
             }
         }
         
+        Self.logger.debug("Preparing and starting audio engine...")
         audioEngine.prepare()
         try audioEngine.start()
         isRecording = true
+        Self.logger.debug("Audio recording started successfully, isRecording = \(self.isRecording)")
     }
     
     func stopRecording() async throws {
@@ -277,16 +371,17 @@ internal actor AuralAudioProcessor {
                 try await speechAnalyzer.processAudioBuffer(buffer)
             }
         } catch {
-            print("Audio buffer processing error: \(error)")
+            Self.logger.error("Audio buffer processing error: \(error)")
         }
     }
     
     /// Process audio data that was extracted synchronously from the callback
     func processAudioData(_ data: Data, frameLength: AVAudioFrameCount, format: AVAudioFormat, speechAnalyzer: AuralSpeechAnalyzer) async {
+        Self.logger.debug("Processing audio data with frameLength: \(frameLength)")
         do {
             // Reconstruct buffer within the actor from the copied data
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameLength) else {
-                print("Failed to create audio buffer")
+                Self.logger.error("Failed to create audio buffer")
                 return
             }
             
@@ -298,12 +393,14 @@ internal actor AuralAudioProcessor {
                 buffer.floatChannelData![0].update(from: floatPtr.baseAddress!, count: Int(frameLength))
             }
             
+            Self.logger.debug("Audio buffer reconstructed, writing to file and processing...")
+            
             // Now process within actor
             try audioFile?.write(from: buffer)
             try await speechAnalyzer.processAudioBuffer(buffer)
             
         } catch {
-            print("Audio data processing error: \(error)")
+            Self.logger.error("Audio data processing error: \(error)")
         }
     }
 }

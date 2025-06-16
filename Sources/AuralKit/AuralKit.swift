@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Observation
+import OSLog
 
 /// The main interface for AuralKit speech recognition operations.
 ///
@@ -62,6 +63,9 @@ import Observation
 public final class AuralKit {
     
     // MARK: - Private Properties
+    
+    /// Logger for AuralKit operations
+    private static let logger = Logger(subsystem: "com.auralkit", category: "AuralKit")
     
     /// The underlying engine that provides speech recognition functionality
     private let engine: AuralKitEngineProtocol

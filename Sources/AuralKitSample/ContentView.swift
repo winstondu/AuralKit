@@ -1,7 +1,10 @@
 import SwiftUI
 import AuralKit
+import OSLog
 
 struct ContentView: View {
+    private static let logger = Logger(subsystem: "com.auralkit.sample", category: "ContentView")
+    
     @State private var auralKit = AuralKit()
     @State private var selectedLanguage: AuralLanguage = .english
     @State private var selectedQuality: AuralQuality = .medium
@@ -159,7 +162,7 @@ struct ContentView: View {
             do {
                 try await auralKit.toggle()
             } catch {
-                print("Live transcription error: \(error)")
+                Self.logger.error("Live transcription error: \(error)")
             }
         }
     }
@@ -223,7 +226,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
+        NavigationStack {
             Form {
                 Section("Language") {
                     Picker("Language", selection: $selectedLanguage) {
