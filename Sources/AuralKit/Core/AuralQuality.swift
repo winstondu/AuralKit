@@ -17,7 +17,7 @@ import Foundation
 ///     .quality(.high)
 ///     .language(.english)
 /// ```
-public enum AuralQuality: Sendable {
+public enum AuralQuality: Sendable, Hashable {
     /// Low quality processing for maximum speed
     case low
     
