@@ -12,7 +12,10 @@
       "Bash(xcode-select:*)",
       "Bash(swift test:*)",
       "Bash(timeout:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(xcodegen generate:*)",
+      "Bash(open:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false

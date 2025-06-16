@@ -74,6 +74,35 @@ let text = try await AuralKit.startTranscribing()
 - Microphone permissions for audio recording
 - Network access for language model downloads
 
+## iOS Device Deployment
+
+To run on iOS devices, you'll need to add microphone permissions to your app's Info.plist:
+
+```xml
+<key>NSMicrophoneUsageDescription</key>
+<string>AuralKit Sample App needs microphone access to demonstrate speech-to-text transcription features. Your audio is processed locally on device and not transmitted anywhere.</string>
+<key>NSSpeechRecognitionUsageDescription</key>
+<string>AuralKit Sample App uses speech recognition to convert your spoken words into text. This helps demonstrate the framework's capabilities for speech-to-text applications.</string>
+```
+
+### Creating an iOS Project
+
+1. Open Xcode and create a new iOS App project
+2. Add AuralKit as a Swift Package dependency:
+   ```
+   File → Add Package Dependencies → Enter the AuralKit repository URL
+   ```
+3. Copy the `ContentView.swift` code from this sample
+4. Add the microphone permissions to your Info.plist
+5. Build and run on device or simulator
+
+### Cross-Platform Compatibility
+
+The sample app is designed to work across Apple platforms:
+- **macOS**: Run directly with `swift run AuralKitSample`
+- **iOS**: Deploy through Xcode with proper permissions
+- **visionOS**: Same as iOS but with spatial computing optimizations
+
 ## Key Classes
 
 - **AuralKit**: Main framework interface with fluent configuration API

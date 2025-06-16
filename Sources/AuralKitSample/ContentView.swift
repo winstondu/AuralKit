@@ -46,7 +46,7 @@ struct ContentView: View {
                         Text(auralKit.currentText.isEmpty ? "Tap the microphone to start speaking..." : auralKit.currentText)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding()
-                            .background(Color(NSColor.textBackgroundColor))
+                            .background(.regularMaterial)
                             .cornerRadius(8)
                             .font(.body)
                     }
