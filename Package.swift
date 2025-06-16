@@ -12,34 +12,20 @@ let package = Package(
         .library(
             name: "AuralKit",
             targets: ["AuralKit"]
-        ),
-        .executable(
-            name: "AuralKitSample",
-            targets: ["AuralKitSample"]
         )
     ],
     targets: [
         .target(
             name: "AuralKit",
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency"),
-                .enableExperimentalFeature("AccessLevelOnImport")
-            ]
-        ),
-        .executableTarget(
-            name: "AuralKitSample",
-            dependencies: ["AuralKit"],
-            swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency"),
-                .enableExperimentalFeature("AccessLevelOnImport")
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         ),
         .testTarget(
             name: "AuralKitTests",
             dependencies: ["AuralKit"],
             swiftSettings: [
-                .enableUpcomingFeature("StrictConcurrency"),
-                .enableExperimentalFeature("AccessLevelOnImport")
+                .enableUpcomingFeature("StrictConcurrency")
             ]
         )
     ]
