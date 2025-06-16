@@ -406,8 +406,8 @@ extension AuralKit {
         attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
       )
 
-      // Create analyzer with the audio file directly
-      let speechAnalyzer = try await SpeechAnalyzer(
+      // Create analyzer with the audio file directly - this automatically starts processing
+      let _ = try await SpeechAnalyzer(
         inputAudioFile: audioFile,
         modules: [speechTranscriber],
         finishAfterFile: true  // Automatically finish when file is processed
@@ -415,7 +415,7 @@ extension AuralKit {
 
       var finalText = ""
 
-      // Process results as they come in
+      // Process results as they come in (analyzer is already running)
       for try await result in speechTranscriber.results {
         if !result.isFinal && configuration.includePartialResults {
           // Update current text with partial results for UI
@@ -483,14 +483,14 @@ extension AuralKit {
         attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
       )
 
-      // Create analyzer with the audio file directly
-      let speechAnalyzer = try await SpeechAnalyzer(
+      // Create analyzer with the audio file directly - this automatically starts processing
+      let _ = try await SpeechAnalyzer(
         inputAudioFile: audioFile,
         modules: [speechTranscriber],
         finishAfterFile: true  // Automatically finish when file is processed
       )
 
-      // Process results as they come in
+      // Process results as they come in (analyzer is already running)
       for try await result in speechTranscriber.results {
         let auralResult = AuralResult(
           text: result.text.description,
@@ -500,7 +500,7 @@ extension AuralKit {
         )
 
         if configuration.includePartialResults || !auralResult.isPartial {
-          await onResult(auralResult)
+          onResult(auralResult)
           currentText = auralResult.text
         }
       }
@@ -551,8 +551,8 @@ extension AuralKit {
         attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
       )
 
-      // Create analyzer with the audio file directly
-      let speechAnalyzer = try await SpeechAnalyzer(
+      // Create analyzer with the audio file directly - this automatically starts processing
+      let _ = try await SpeechAnalyzer(
         inputAudioFile: audioFile,
         modules: [speechTranscriber],
         finishAfterFile: true  // Automatically finish when file is processed
@@ -560,7 +560,7 @@ extension AuralKit {
 
       var finalText = ""
 
-      // Process results as they come in
+      // Process results as they come in (analyzer is already running)
       for try await result in speechTranscriber.results {
         if result.isFinal {
           finalText += result.text.description + " "
