@@ -3,15 +3,15 @@ import AVFoundation
 @testable import AuralKit
 
 internal struct MockAuralKitEngine: AuralKitEngineProtocol, Sendable {
-    let speechAnalyzer: SpeechAnalyzerProtocol
-    let audioEngine: AudioEngineProtocol
-    let modelManager: ModelManagerProtocol
-    let bufferProcessor: AudioBufferProcessorProtocol
+    let speechAnalyzer: any SpeechAnalyzerProtocol
+    let audioEngine: any AudioEngineProtocol
+    let modelManager: any ModelManagerProtocol
+    let bufferProcessor: any AudioBufferProcessorProtocol
     
-    init(speechAnalyzer: SpeechAnalyzerProtocol = MockSpeechAnalyzer(),
-         audioEngine: AudioEngineProtocol = MockAudioEngine(),
-         modelManager: ModelManagerProtocol = MockModelManager(),
-         bufferProcessor: AudioBufferProcessorProtocol = MockAudioBufferProcessor()) {
+    init(speechAnalyzer: any SpeechAnalyzerProtocol = MockSpeechAnalyzer(),
+         audioEngine: any AudioEngineProtocol = MockAudioEngine(),
+         modelManager: any ModelManagerProtocol = MockModelManager(),
+         bufferProcessor: any AudioBufferProcessorProtocol = MockAudioBufferProcessor()) {
         self.speechAnalyzer = speechAnalyzer
         self.audioEngine = audioEngine
         self.modelManager = modelManager
@@ -19,7 +19,7 @@ internal struct MockAuralKitEngine: AuralKitEngineProtocol, Sendable {
     }
 }
 
-internal final class MockSpeechAnalyzer: SpeechAnalyzerProtocol, @unchecked Sendable {
+internal actor MockSpeechAnalyzer: SpeechAnalyzerProtocol {
     private let (stream, continuation) = AsyncStream.makeStream(of: AuralResult.self)
     
     nonisolated var results: AsyncStream<AuralResult> {
@@ -81,6 +81,14 @@ internal final class MockSpeechAnalyzer: SpeechAnalyzerProtocol, @unchecked Send
         continuation.finish()
     }
     
+    func setMockResults(_ results: [AuralResult]) {
+        mockResults = results
+    }
+    
+    func setShouldThrowOnStart(_ shouldThrow: Bool) {
+        shouldThrowOnStart = shouldThrow
+    }
+    
     func simulateResult(_ result: AuralResult) {
         continuation.yield(result)
     }
@@ -92,7 +100,7 @@ internal final class MockSpeechAnalyzer: SpeechAnalyzerProtocol, @unchecked Send
     }
 }
 
-internal final class MockAudioEngine: AudioEngineProtocol, @unchecked Sendable {
+internal actor MockAudioEngine: AudioEngineProtocol {
     var audioFormat: AVAudioFormat?
     var isRecording = false
     
@@ -133,7 +141,7 @@ internal final class MockAudioEngine: AudioEngineProtocol, @unchecked Sendable {
         isRecording = false
     }
     
-    func pauseRecording() throws {
+    func pauseRecording() async throws {
         pauseRecordingCallCount += 1
         
         if shouldThrowOnPause {
@@ -141,7 +149,7 @@ internal final class MockAudioEngine: AudioEngineProtocol, @unchecked Sendable {
         }
     }
     
-    func resumeRecording() throws {
+    func resumeRecording() async throws {
         resumeRecordingCallCount += 1
         
         if shouldThrowOnResume {
@@ -150,7 +158,7 @@ internal final class MockAudioEngine: AudioEngineProtocol, @unchecked Sendable {
     }
 }
 
-internal final class MockModelManager: ModelManagerProtocol, @unchecked Sendable {
+internal actor MockModelManager: ModelManagerProtocol {
     var isModelAvailableCallCount = 0
     var downloadModelCallCount = 0
     var getDownloadProgressCallCount = 0
@@ -190,17 +198,9 @@ internal final class MockModelManager: ModelManagerProtocol, @unchecked Sendable
     }
 }
 
-internal final class MockAudioBufferProcessor: AudioBufferProcessorProtocol, @unchecked Sendable {
-    var processBufferCallCount = 0
-    var shouldThrowOnProcess = false
-    
+internal struct MockAudioBufferProcessor: AudioBufferProcessorProtocol {
     func processBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
-        processBufferCallCount += 1
-        
-        if shouldThrowOnProcess {
-            throw AuralError.audioSetupFailed
-        }
-        
+        // Mock implementation - just return the buffer
         return buffer
     }
 }

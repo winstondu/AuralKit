@@ -38,11 +38,11 @@ struct AuralKitTests {
         let auralKit = setup.auralKit
         let mockSpeechAnalyzer = setup.mockSpeechAnalyzer
         
-        mockSpeechAnalyzer.mockResults = [
+        await mockSpeechAnalyzer.setMockResults([
             AuralResult(text: "Hello", isPartial: false),
             AuralResult(text: "Hello world", isPartial: false),
             AuralResult(text: "Hello world!", isPartial: false)
-        ]
+        ])
         
         let result = try await auralKit.startTranscribing()
         #expect(result == "Hello world!")
@@ -56,7 +56,7 @@ struct AuralKitTests {
         let auralKit = setup.auralKit
         let mockSpeechAnalyzer = setup.mockSpeechAnalyzer
         
-        mockSpeechAnalyzer.shouldThrowOnStart = true
+        await mockSpeechAnalyzer.setShouldThrowOnStart(true)
         
         do {
             _ = try await auralKit.startTranscribing()
@@ -73,9 +73,9 @@ struct AuralKitTests {
         let auralKit = setup.auralKit
         let mockSpeechAnalyzer = setup.mockSpeechAnalyzer
         
-        mockSpeechAnalyzer.mockResults = [
+        await mockSpeechAnalyzer.setMockResults([
             AuralResult(text: "Test", isPartial: false)
-        ]
+        ])
         
         Task {
             try? await auralKit.startTranscribing()
@@ -119,7 +119,7 @@ struct AuralKitTests {
         
         #expect(auralKit.isTranscribing == true)
         
-        mockSpeechAnalyzer.simulateResults([
+        await mockSpeechAnalyzer.simulateResults([
             AuralResult(text: "Hello", isPartial: false),
             AuralResult(text: "World", isPartial: false)
         ])

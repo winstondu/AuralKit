@@ -34,13 +34,13 @@ protocol AudioEngineProtocol: Sendable {
     /// This property provides the audio format information needed for
     /// audio processing and conversion. It may be nil before recording
     /// has been configured.
-    var audioFormat: AVAudioFormat? { get }
+    var audioFormat: AVAudioFormat? { get async }
     
     /// Whether the audio engine is currently recording.
     ///
     /// This property indicates the current recording state and can be
     /// used to prevent conflicting operations or update UI state.
-    var isRecording: Bool { get }
+    var isRecording: Bool { get async }
     
     /// Requests permission to access the microphone.
     ///
@@ -73,7 +73,7 @@ protocol AudioEngineProtocol: Sendable {
     /// Recording can be resumed using `resumeRecording()`.
     ///
     /// - Throws: AuralError.audioSetupFailed if pausing fails
-    func pauseRecording() throws
+    func pauseRecording() async throws
     
     /// Resumes audio recording after a pause.
     ///
@@ -81,5 +81,5 @@ protocol AudioEngineProtocol: Sendable {
     /// `pauseRecording()`.
     ///
     /// - Throws: AuralError.audioSetupFailed if resuming fails
-    func resumeRecording() throws
+    func resumeRecording() async throws
 }

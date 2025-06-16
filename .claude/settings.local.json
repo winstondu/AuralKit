@@ -10,7 +10,8 @@
       "Bash(xcrun --toolchain com.apple.dt.toolchain.XcodeDefault swift build)",
       "Bash(xcrun:*)",
       "Bash(xcode-select:*)",
-      "Bash(swift test:*)"
+      "Bash(swift test:*)",
+      "Bash(timeout:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false

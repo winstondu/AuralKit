@@ -36,23 +36,23 @@ internal protocol AuralKitEngineProtocol: Sendable {
     ///
     /// This component handles the core speech recognition functionality,
     /// taking audio input and producing text transcriptions with metadata.
-    var speechAnalyzer: SpeechAnalyzerProtocol { get }
+    var speechAnalyzer: any SpeechAnalyzerProtocol { get }
     
     /// The audio engine component for recording and audio management.
     ///
     /// This component handles microphone access, audio recording,
     /// and provides audio format information for other components.
-    var audioEngine: AudioEngineProtocol { get }
+    var audioEngine: any AudioEngineProtocol { get }
     
     /// The model manager component for speech model management.
     ///
     /// This component handles downloading, installing, and managing
     /// speech recognition models for different languages.
-    var modelManager: ModelManagerProtocol { get }
+    var modelManager: any ModelManagerProtocol { get }
     
     /// The buffer processor component for audio format conversion.
     ///
     /// This component handles audio format conversion between the
     /// recording system and the speech recognition system.
-    var bufferProcessor: AudioBufferProcessorProtocol { get }
+    var bufferProcessor: any AudioBufferProcessorProtocol { get }
 }
