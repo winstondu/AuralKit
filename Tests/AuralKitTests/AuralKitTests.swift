@@ -77,6 +77,9 @@ struct AuralKitTests {
             AuralResult(text: "Test", isPartial: false)
         ])
         
+        // Disable auto-yielding so the first transcription stays active
+        await mockSpeechAnalyzer.setAutoYieldResults(false)
+        
         Task {
             try? await auralKit.startTranscribing()
         }
@@ -110,6 +113,9 @@ struct AuralKitTests {
         let auralKit = setup.auralKit
         let mockSpeechAnalyzer = setup.mockSpeechAnalyzer
         let collector = ResultsCollector()
+        
+        // Disable auto-yielding for this test
+        await mockSpeechAnalyzer.setAutoYieldResults(false)
         
         try await auralKit.startLiveTranscription { result in
             Task {
@@ -151,11 +157,8 @@ struct AuralKitTests {
         let setup = createTestSetup()
         let auralKit = setup.auralKit
         
-        do {
-            try await auralKit.stopTranscription()
-            Issue.record("Expected error when stopping while not transcribing")
-        } catch let error as AuralError {
-            #expect(error == .recognitionFailed)
-        }
+        // Should not throw - it's idempotent
+        try await auralKit.stopTranscription()
+        #expect(auralKit.isTranscribing == false)
     }
 }

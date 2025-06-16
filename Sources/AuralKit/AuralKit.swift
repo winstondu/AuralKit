@@ -236,7 +236,7 @@ extension AuralKit {
             
             for await result in engine.speechAnalyzer.results {
                 if !result.isPartial {
-                    finalText += result.text
+                    finalText = result.text  // Use latest result, not concatenate
                     currentText = finalText
                 }
             }

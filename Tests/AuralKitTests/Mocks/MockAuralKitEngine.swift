@@ -38,6 +38,7 @@ internal actor MockSpeechAnalyzer: SpeechAnalyzerProtocol {
     var shouldThrowOnFinish = false
     
     var mockResults: [AuralResult] = []
+    var autoYieldResults = true  // Whether to automatically yield mockResults when startAnalysis is called
     
     func configure(with configuration: AuralConfiguration) async throws {
         configureCallCount += 1
@@ -55,11 +56,12 @@ internal actor MockSpeechAnalyzer: SpeechAnalyzerProtocol {
             throw AuralError.recognitionFailed
         }
         
-        let results = mockResults
-        Task { @Sendable in
-            for result in results {
+        if autoYieldResults {
+            // Yield mock results and finish for simple tests
+            for result in mockResults {
                 continuation.yield(result)
             }
+            continuation.finish()
         }
     }
     
@@ -87,6 +89,10 @@ internal actor MockSpeechAnalyzer: SpeechAnalyzerProtocol {
     
     func setShouldThrowOnStart(_ shouldThrow: Bool) {
         shouldThrowOnStart = shouldThrow
+    }
+    
+    func setAutoYieldResults(_ autoYield: Bool) {
+        autoYieldResults = autoYield
     }
     
     func simulateResult(_ result: AuralResult) {
