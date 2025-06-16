@@ -101,8 +101,13 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         Self.logger.debug("SpeechTranscriber created successfully")
         
         // Ensure the model is available for this language
-        try await ensureModel(for: speechTranscriber, locale: configuration.language.locale)
-        Self.logger.debug("Model ensured for locale")
+        do {
+            try await ensureModel(for: speechTranscriber, locale: configuration.language.locale)
+            Self.logger.debug("Model ensured for locale")
+        } catch {
+            Self.logger.warning("Model check failed: \(error), proceeding without explicit model management")
+            // Continue anyway - SpeechTranscriber may handle model management automatically
+        }
         
         // Create analyzer with the transcriber
         speechAnalyzer = SpeechAnalyzer(modules: [speechTranscriber])
@@ -131,8 +136,10 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
             
             Self.logger.debug("Starting to process speech results...")
             do {
+                var resultCount = 0
                 for try await result in speechTranscriber.results {
-                    Self.logger.debug("Received speech result: '\(String(result.text.characters))', isFinal: \(result.isFinal)")
+                    resultCount += 1
+                    Self.logger.debug("Received speech result #\(resultCount): '\(String(result.text.characters))', isFinal: \(result.isFinal)")
                     let auralResult = AuralResult(
                         text: String(result.text.characters),
                         confidence: 1.0, // SpeechTranscriber doesn't provide confidence in the new API
@@ -142,7 +149,7 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
                     
                     await self.yieldResult(auralResult)
                 }
-                Self.logger.debug("Speech results processing completed")
+                Self.logger.debug("Speech results processing completed after \(resultCount) results")
             } catch {
                 // Handle speech recognition errors
                 Self.logger.error("Speech recognition error in results loop: \(error)")
@@ -188,6 +195,7 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         // Create analyzer input and yield it
         let input = AnalyzerInput(buffer: convertedBuffer)
         inputBuilder.yield(input)
+        Self.logger.debug("Audio input yielded to speech analyzer successfully")
     }
     
     private func yieldResult(_ result: AuralResult) {
@@ -196,43 +204,78 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     
     /// Request Speech recognition permission - following Apple's sample
     private func requestSpeechPermission() async throws {
-        // Apple's sample doesn't explicitly request speech permission 
-        // as it's handled automatically by the SpeechTranscriber
-        // We keep this for explicit permission handling if needed
-        return
+        // Request speech recognition permission explicitly
+        let authStatus = SFSpeechRecognizer.authorizationStatus()
+        
+        switch authStatus {
+        case .notDetermined:
+            let permissionGranted = await withCheckedContinuation { continuation in
+                SFSpeechRecognizer.requestAuthorization { status in
+                    continuation.resume(returning: status == .authorized)
+                }
+            }
+            if !permissionGranted {
+                throw AuralError.permissionDenied
+            }
+        case .denied, .restricted:
+            throw AuralError.permissionDenied
+        case .authorized:
+            break
+        @unknown default:
+            throw AuralError.permissionDenied
+        }
     }
     
     /// Ensure the speech model is available - following Apple's sample approach
     private func ensureModel(for transcriber: SpeechTranscriber, locale: Locale) async throws {
         // Following Apple's sample pattern from SpokenWordTranscriber.ensureModel
+        Self.logger.debug("Checking model availability for locale: \(locale.identifier)")
+        
         guard await supported(locale: locale) else {
+            Self.logger.error("Locale \(locale.identifier) is not supported")
             throw AuralError.unsupportedLanguage
         }
+        Self.logger.debug("Locale \(locale.identifier) is supported")
         
         if await installed(locale: locale) {
+            Self.logger.debug("Model for locale \(locale.identifier) is already installed")
             return
         } else {
+            Self.logger.debug("Model for locale \(locale.identifier) not installed, attempting download")
             try await downloadIfNeeded(for: transcriber)
         }
     }
     
     private func supported(locale: Locale) async -> Bool {
         let supported = await SpeechTranscriber.supportedLocales
-        return supported.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
+        let supportedIdentifiers = supported.map { $0.identifier(.bcp47) }
+        let isSupported = supportedIdentifiers.contains(locale.identifier(.bcp47))
+        Self.logger.debug("Supported locales: \(supportedIdentifiers), checking: \(locale.identifier(.bcp47)), supported: \(isSupported)")
+        return isSupported
     }
 
     private func installed(locale: Locale) async -> Bool {
         let installed = await Set(SpeechTranscriber.installedLocales)
-        return installed.map { $0.identifier(.bcp47) }.contains(locale.identifier(.bcp47))
+        let installedIdentifiers = installed.map { $0.identifier(.bcp47) }
+        let isInstalled = installedIdentifiers.contains(locale.identifier(.bcp47))
+        Self.logger.debug("Installed locales: \(installedIdentifiers), checking: \(locale.identifier(.bcp47)), installed: \(isInstalled)")
+        return isInstalled
     }
 
     private func downloadIfNeeded(for module: SpeechTranscriber) async throws {
-        if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
-            do {
+        Self.logger.debug("Requesting asset installation for speech transcriber")
+        
+        do {
+            if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [module]) {
+                Self.logger.debug("Asset installation request created, starting download...")
                 try await downloader.downloadAndInstall()
-            } catch {
-                throw AuralError.networkError
+                Self.logger.debug("Model download completed successfully")
+            } else {
+                Self.logger.error("No asset installation request available - model may already be installed or not needed")
             }
+        } catch {
+            Self.logger.error("Model download failed: \(error)")
+            throw AuralError.networkError
         }
     }
 }
