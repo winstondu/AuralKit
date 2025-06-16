@@ -28,7 +28,7 @@ import Foundation
 ///     .includePartialResults()
 ///     .includeTimestamps()
 /// ```
-public struct AuralConfiguration {
+public struct AuralConfiguration: Sendable {
     /// Target language for speech recognition
     public let language: AuralLanguage
     

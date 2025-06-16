@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 @testable import AuralKit
 
-internal struct MockAuralKitEngine: AuralKitEngineProtocol {
+internal struct MockAuralKitEngine: AuralKitEngineProtocol, Sendable {
     let speechAnalyzer: SpeechAnalyzerProtocol
     let audioEngine: AudioEngineProtocol
     let modelManager: ModelManagerProtocol
@@ -19,10 +19,10 @@ internal struct MockAuralKitEngine: AuralKitEngineProtocol {
     }
 }
 
-internal class MockSpeechAnalyzer: SpeechAnalyzerProtocol, @unchecked Sendable {
+internal final class MockSpeechAnalyzer: SpeechAnalyzerProtocol, @unchecked Sendable {
     private let (stream, continuation) = AsyncStream.makeStream(of: AuralResult.self)
     
-    var results: AsyncStream<AuralResult> {
+    nonisolated var results: AsyncStream<AuralResult> {
         stream
     }
     
@@ -92,7 +92,7 @@ internal class MockSpeechAnalyzer: SpeechAnalyzerProtocol, @unchecked Sendable {
     }
 }
 
-internal class MockAudioEngine: AudioEngineProtocol {
+internal final class MockAudioEngine: AudioEngineProtocol, @unchecked Sendable {
     var audioFormat: AVAudioFormat?
     var isRecording = false
     
@@ -150,7 +150,7 @@ internal class MockAudioEngine: AudioEngineProtocol {
     }
 }
 
-internal class MockModelManager: ModelManagerProtocol {
+internal final class MockModelManager: ModelManagerProtocol, @unchecked Sendable {
     var isModelAvailableCallCount = 0
     var downloadModelCallCount = 0
     var getDownloadProgressCallCount = 0
@@ -190,7 +190,7 @@ internal class MockModelManager: ModelManagerProtocol {
     }
 }
 
-internal class MockAudioBufferProcessor: AudioBufferProcessorProtocol {
+internal final class MockAudioBufferProcessor: AudioBufferProcessorProtocol, @unchecked Sendable {
     var processBufferCallCount = 0
     var shouldThrowOnProcess = false
     

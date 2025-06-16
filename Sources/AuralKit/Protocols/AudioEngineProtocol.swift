@@ -28,7 +28,7 @@ import AVFoundation
 /// // ... process audio ...
 /// try await audioEngine.stopRecording()
 /// ```
-protocol AudioEngineProtocol {
+protocol AudioEngineProtocol: Sendable {
     /// The current audio format being used for recording.
     ///
     /// This property provides the audio format information needed for

@@ -25,7 +25,7 @@ import AVFoundation
 /// 
 /// let convertedBuffer = try processor.processBuffer(inputBuffer, to: targetFormat)
 /// ```
-protocol AudioBufferProcessorProtocol {
+protocol AudioBufferProcessorProtocol: Sendable {
     /// Processes an audio buffer, converting it to the specified format.
     ///
     /// This method takes an input audio buffer and converts it to match

@@ -12,7 +12,7 @@ import Foundation
 ///     .language(.spanish)
 ///     .startTranscribing()
 /// ```
-public enum AuralLanguage {
+public enum AuralLanguage: Sendable {
     /// English (United States) locale
     case english
     

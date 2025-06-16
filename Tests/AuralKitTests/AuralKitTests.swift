@@ -4,6 +4,7 @@ import Testing
 @Suite("AuralKit Tests")
 struct AuralKitTests {
     
+    @MainActor
     private func createTestSetup() -> (auralKit: AuralKit, mockEngine: MockAuralKitEngine, mockSpeechAnalyzer: MockSpeechAnalyzer, mockAudioEngine: MockAudioEngine, mockModelManager: MockModelManager) {
         let mockSpeechAnalyzer = MockSpeechAnalyzer()
         let mockAudioEngine = MockAudioEngine()
@@ -21,6 +22,7 @@ struct AuralKitTests {
     }
     
     @Test("AuralKit initialization")
+    @MainActor
     func auralKitInitialization() {
         let auralKit = AuralKit()
         #expect(auralKit.isTranscribing == false)
@@ -30,6 +32,7 @@ struct AuralKitTests {
     }
     
     @Test("Start transcribing success")
+    @MainActor
     func startTranscribingSuccess() async throws {
         let setup = createTestSetup()
         let auralKit = setup.auralKit
@@ -47,6 +50,7 @@ struct AuralKitTests {
     }
     
     @Test("Start transcribing with failure")
+    @MainActor
     func startTranscribingFailure() async throws {
         let setup = createTestSetup()
         let auralKit = setup.auralKit
@@ -63,6 +67,7 @@ struct AuralKitTests {
     }
     
     @Test("Start transcribing when already transcribing")
+    @MainActor
     func startTranscribingWhenAlreadyTranscribing() async throws {
         let setup = createTestSetup()
         let auralKit = setup.auralKit
@@ -87,6 +92,7 @@ struct AuralKitTests {
     }
     
     @Test("Start live transcription success")
+    @MainActor
     func startLiveTranscriptionSuccess() async throws {
         actor ResultsCollector {
             private var results: [AuralResult] = []
@@ -127,6 +133,7 @@ struct AuralKitTests {
     }
     
     @Test("Stop transcription success")
+    @MainActor
     func stopTranscriptionSuccess() async throws {
         let setup = createTestSetup()
         let auralKit = setup.auralKit
@@ -139,6 +146,7 @@ struct AuralKitTests {
     }
     
     @Test("Stop transcription when not transcribing")
+    @MainActor
     func stopTranscriptionWhenNotTranscribing() async throws {
         let setup = createTestSetup()
         let auralKit = setup.auralKit

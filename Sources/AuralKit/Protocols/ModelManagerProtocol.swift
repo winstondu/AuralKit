@@ -26,7 +26,7 @@ import Foundation
 ///     try await modelManager.downloadModel(for: .spanish)
 /// }
 /// ```
-protocol ModelManagerProtocol {
+protocol ModelManagerProtocol: Sendable {
     /// Checks if a speech recognition model is available for the specified language.
     ///
     /// This method verifies that the necessary speech recognition assets

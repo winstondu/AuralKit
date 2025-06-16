@@ -31,7 +31,7 @@ import Foundation
 /// let mockEngine: AuralKitEngineProtocol = MockAuralKitEngine()
 /// let auralKit = AuralKit(engine: mockEngine)
 /// ```
-internal protocol AuralKitEngineProtocol {
+internal protocol AuralKitEngineProtocol: Sendable {
     /// The speech analysis component for speech-to-text processing.
     ///
     /// This component handles the core speech recognition functionality,

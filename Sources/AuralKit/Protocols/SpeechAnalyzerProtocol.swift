@@ -24,7 +24,7 @@ import AVFoundation
 ///     print("Transcribed: \(result.text)")
 /// }
 /// ```
-protocol SpeechAnalyzerProtocol {
+protocol SpeechAnalyzerProtocol: Sendable {
     /// Async stream of recognition results.
     ///
     /// Results are delivered as they become available, with partial results

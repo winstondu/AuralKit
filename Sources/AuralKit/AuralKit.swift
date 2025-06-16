@@ -57,8 +57,9 @@ import Observation
 ///     }
 /// }
 /// ```
+@MainActor
 @Observable
-public final class AuralKit: @unchecked Sendable {
+public final class AuralKit {
     
     // MARK: - Private Properties
     
@@ -66,13 +67,13 @@ public final class AuralKit: @unchecked Sendable {
     private let engine: AuralKitEngineProtocol
     
     /// Current configuration settings for speech recognition
-    private var configuration: AuralConfiguration
+    private var configuration: AuralConfiguration = AuralConfiguration()
     
     /// Background task for live transcription processing
     private var transcriptionTask: Task<Void, Error>?
     
     /// Handler for live transcription results
-    private var liveTranscriptionHandler: (@Sendable (AuralResult) -> Void)?
+    private var liveTranscriptionHandler: (@MainActor @Sendable (AuralResult) -> Void)?
     
     // MARK: - Public Observable Properties
     
@@ -95,7 +96,6 @@ public final class AuralKit: @unchecked Sendable {
     /// The default configuration uses English language, medium quality,
     /// and does not include partial results or timestamps.
     public init() {
-        self.configuration = AuralConfiguration()
         self.engine = ProductionAuralKitEngine()
     }
     
@@ -261,7 +261,7 @@ extension AuralKit {
     ///
     /// - Parameter onResult: Callback function that receives transcription results
     /// - Throws: AuralError if transcription fails or is already in progress
-    public func startLiveTranscription(onResult: @escaping @Sendable (AuralResult) -> Void) async throws {
+    public func startLiveTranscription(onResult: @escaping @MainActor @Sendable (AuralResult) -> Void) async throws {
         guard !isTranscribing else {
             throw AuralError.recognitionFailed
         }
@@ -277,7 +277,7 @@ extension AuralKit {
             try await engine.speechAnalyzer.startAnalysis()
             
             // Note: Simplified for compilation - full concurrency handling needed in production
-            transcriptionTask = Task { @Sendable in
+            transcriptionTask = Task { @MainActor in
                 for await result in engine.speechAnalyzer.results {
                     if configuration.includePartialResults || !result.isPartial {
                         onResult(result)
@@ -328,7 +328,7 @@ extension AuralKit {
         if isTranscribing {
             try await stopTranscription()
         } else {
-            try await startLiveTranscription { [weak self] result in
+            try await startLiveTranscription { @MainActor [weak self] result in
                 self?.currentText = result.text
             }
         }
