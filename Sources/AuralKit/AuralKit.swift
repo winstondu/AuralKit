@@ -96,7 +96,7 @@ public final class AuralKit {
     /// The default configuration uses English language, medium quality,
     /// and does not include partial results or timestamps.
     public init() {
-        self.engine = ProductionAuralKitEngine()
+        self.engine = AuralKitEngine()
     }
     
     /// Creates a new AuralKit instance with a custom engine.
