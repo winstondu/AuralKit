@@ -124,7 +124,7 @@ struct ConfigurationTestView: View {
             
             // Test different quality levels
             for quality in [AuralQuality.low, .medium, .high] {
-                let result = try await AuralKit()
+                let _ = try await AuralKit()
                     .language(.english)
                     .quality(quality)
                     .transcribeFile(at: testURL)
@@ -167,6 +167,7 @@ struct ConfigurationTestView: View {
 struct EnhancedContentView: View {
     @State private var auralKit = AuralKit()
     @State private var showingTests = false
+    @State private var isTranscribing = false
     
     var body: some View {
         VStack {
@@ -179,11 +180,12 @@ struct EnhancedContentView: View {
                 Button("Spanish + High Quality") {
                     _ = auralKit.language(.spanish).quality(.high)
                 }
-                .disabled(auralKit.isTranscribing)
+                .disabled(isTranscribing)
                 
-                Button(auralKit.isTranscribing ? "Stop" : "Start") {
+                Button(isTranscribing ? "Stop" : "Start") {
                     Task {
                         try await auralKit.toggle()
+                        isTranscribing = await auralKit.isTranscribing
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -196,6 +198,9 @@ struct EnhancedContentView: View {
         }
         .sheet(isPresented: $showingTests) {
             ConfigurationTestView()
+        }
+        .task {
+            isTranscribing = await auralKit.isTranscribing
         }
     }
 }
