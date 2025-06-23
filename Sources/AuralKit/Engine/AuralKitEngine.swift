@@ -57,13 +57,21 @@ internal struct AuralKitEngine: AuralKitEngineProtocol, Sendable {
     let bufferProcessor: any AudioBufferProcessorProtocol
     
     init() {
-        self.speechAnalyzer = AuralSpeechAnalyzer()
-        self.audioEngine = AuralAudioEngine()
-        self.modelManager = AuralModelManager()
+        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+            self.speechAnalyzer = AuralSpeechAnalyzer()
+            self.audioEngine = AuralAudioEngine()
+            self.modelManager = AuralModelManager()
+        } else {
+            // Use legacy implementations for older OS versions
+            self.speechAnalyzer = LegacyAuralSpeechAnalyzer()
+            self.audioEngine = LegacyAuralAudioEngine()
+            self.modelManager = LegacyAuralModelManager()
+        }
         self.bufferProcessor = AuralAudioBufferProcessor()
     }
 }
 
+@available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
 internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     private static let logger = Logger(subsystem: "com.auralkit", category: "SpeechAnalyzer")
     
@@ -282,6 +290,7 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
 
 /// Dedicated audio processor that handles ALL audio operations within a single actor
 /// This ensures AVAudioPCMBuffer never crosses actor boundaries, avoiding Sendable issues
+@available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
 internal actor AuralAudioProcessor {
     private static let logger = Logger(subsystem: "com.auralkit", category: "AudioProcessor")
     
@@ -449,6 +458,7 @@ internal actor AuralAudioProcessor {
 }
 
 /// Simplified audio engine protocol that works with the dedicated processor
+@available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
 internal actor AuralAudioEngine: AudioEngineProtocol {
     private let processor = AuralAudioProcessor()
     
@@ -491,6 +501,7 @@ internal actor AuralAudioEngine: AudioEngineProtocol {
     }
 }
 
+@available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
 internal actor AuralModelManager: ModelManagerProtocol {
     func isModelAvailable(for language: AuralLanguage) async -> Bool {
         let installed = await Set(SpeechTranscriber.installedLocales)
@@ -565,5 +576,134 @@ internal struct AuralAudioBufferProcessor: AudioBufferProcessorProtocol {
         } catch {
             throw AuralError.audioSetupFailed
         }
+    }
+}
+
+// MARK: - Legacy Implementations for iOS 17+, macOS 14+
+
+/// Legacy speech analyzer using SFSpeechRecognizer
+internal actor LegacyAuralSpeechAnalyzer: SpeechAnalyzerProtocol {
+    private let legacyRecognizer = LegacySpeechRecognizer()
+    
+    nonisolated var results: AsyncStream<AuralResult> {
+        legacyRecognizer.results
+    }
+    
+    func configure(with configuration: AuralConfiguration) async throws {
+        try await legacyRecognizer.configure(with: configuration)
+    }
+    
+    func startAnalysis() async throws {
+        try await legacyRecognizer.startRecognition()
+    }
+    
+    func stopAnalysis() async throws {
+        try await legacyRecognizer.stopRecognition()
+    }
+    
+    func finishAnalysis() async throws {
+        try await legacyRecognizer.stopRecognition()
+    }
+    
+    func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
+        try await legacyRecognizer.processAudioBuffer(buffer)
+    }
+    
+    nonisolated func getLegacyRecognizer() -> LegacySpeechRecognizer {
+        legacyRecognizer
+    }
+}
+
+/// Legacy audio engine using AVAudioEngine directly
+internal actor LegacyAuralAudioEngine: AudioEngineProtocol {
+    private let processor = LegacyAudioProcessor()
+    
+    var audioFormat: AVAudioFormat? {
+        get async {
+            await processor.audioFormat
+        }
+    }
+    
+    var isRecording: Bool {
+        get async {
+            await processor.isRecording
+        }
+    }
+    
+    func requestPermission() async -> Bool {
+        await processor.requestPermission()
+    }
+    
+    func startRecording() async throws {
+        // This will be handled by the speech analyzer calling processor directly
+        throw AuralError.audioSetupFailed
+    }
+    
+    func stopRecording() async throws {
+        try await processor.stopRecording()
+    }
+    
+    func pauseRecording() async throws {
+        // Legacy implementation doesn't support pause/resume
+        try await processor.stopRecording()
+    }
+    
+    func resumeRecording() async throws {
+        // Legacy implementation doesn't support pause/resume
+        throw AuralError.audioSetupFailed
+    }
+    
+    /// Get access to the audio processor for direct integration
+    nonisolated func getProcessor() -> LegacyAudioProcessor {
+        processor
+    }
+}
+
+/// Legacy model manager for iOS 17+, macOS 14+
+internal actor LegacyAuralModelManager: ModelManagerProtocol {
+    func isModelAvailable(for language: AuralLanguage) async -> Bool {
+        // Check if the language is available using SFSpeechRecognizer
+        let recognizer = SFSpeechRecognizer(locale: language.locale)
+        return recognizer?.isAvailable ?? false
+    }
+    
+    func downloadModel(for language: AuralLanguage) async throws {
+        // Legacy API doesn't support explicit model downloads
+        // Models are managed by the system
+        let recognizer = SFSpeechRecognizer(locale: language.locale)
+        if recognizer?.isAvailable != true {
+            throw AuralError.modelNotAvailable
+        }
+    }
+    
+    func getDownloadProgress(for language: AuralLanguage) async -> Double? {
+        // Legacy API doesn't provide download progress
+        return nil
+    }
+    
+    func getSupportedLanguages() async -> [AuralLanguage] {
+        // Get all supported locales from SFSpeechRecognizer
+        let supportedLocales = SFSpeechRecognizer.supportedLocales()
+        
+        var languages: [AuralLanguage] = []
+        
+        for locale in supportedLocales {
+            switch locale.identifier {
+            case "en-US", "en_US":
+                languages.append(.english)
+            case "es-ES", "es_ES":
+                languages.append(.spanish)
+            case "fr-FR", "fr_FR":
+                languages.append(.french)
+            case "de-DE", "de_DE":
+                languages.append(.german)
+            case "zh-CN", "zh_CN", "zh-Hans-CN", "zh_Hans_CN":
+                languages.append(.chinese)
+            default:
+                languages.append(.custom(locale))
+            }
+        }
+        
+        return languages
     }
 }

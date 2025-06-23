@@ -238,9 +238,19 @@ extension AuralKit {
       try await engine.speechAnalyzer.startAnalysis()
 
       // Start audio recording with direct integration to speech analyzer
-      if let audioEngine = engine.audioEngine as? AuralAudioEngine {
-        let processor = audioEngine.getProcessor()
-        try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+      if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+        if let audioEngine = engine.audioEngine as? AuralAudioEngine {
+          let processor = audioEngine.getProcessor()
+          try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+        }
+      } else {
+        // Legacy implementation
+        if let audioEngine = engine.audioEngine as? LegacyAuralAudioEngine,
+           let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
+          let processor = audioEngine.getProcessor()
+          let recognizer = speechAnalyzer.getLegacyRecognizer()
+          try await processor.startRecording(with: recognizer)
+        }
       }
 
       var finalText = ""
@@ -289,9 +299,19 @@ extension AuralKit {
       try await engine.speechAnalyzer.startAnalysis()
 
       // Start audio recording with direct integration to speech analyzer
-      if let audioEngine = engine.audioEngine as? AuralAudioEngine {
-        let processor = audioEngine.getProcessor()
-        try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+      if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+        if let audioEngine = engine.audioEngine as? AuralAudioEngine {
+          let processor = audioEngine.getProcessor()
+          try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+        }
+      } else {
+        // Legacy implementation
+        if let audioEngine = engine.audioEngine as? LegacyAuralAudioEngine,
+           let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
+          let processor = audioEngine.getProcessor()
+          let recognizer = speechAnalyzer.getLegacyRecognizer()
+          try await processor.startRecording(with: recognizer)
+        }
       }
 
       transcriptionTask = Task { @MainActor in
@@ -376,9 +396,6 @@ extension AuralKit {
   /// - Parameter fileURL: URL of the audio file to transcribe
   /// - Returns: The complete transcribed text
   /// - Throws: AuralError if transcription fails or file cannot be read
-  @available(iOS 26.0, macOS 26.0, *)
-  @available(tvOS, unavailable)
-  @available(watchOS, unavailable)
   public func transcribeFile(at fileURL: URL) async throws -> String {
     guard !isTranscribing else {
       throw AuralError.recognitionFailed
@@ -395,39 +412,13 @@ extension AuralKit {
       // Prepare for transcription
       try await prepareForTranscription()
 
-      // Open the audio file
-      let audioFile = try AVAudioFile(forReading: fileURL)
-
-      // Create transcriber with the specified language
-      let speechTranscriber = SpeechTranscriber(
-        locale: configuration.language.locale,
-        transcriptionOptions: [],
-        reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
-        attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
-      )
-
-      // Create analyzer with the audio file directly - this automatically starts processing
-      let _ = try await SpeechAnalyzer(
-        inputAudioFile: audioFile,
-        modules: [speechTranscriber],
-        finishAfterFile: true  // Automatically finish when file is processed
-      )
-
-      var finalText = ""
-
-      // Process results as they come in (analyzer is already running)
-      for try await result in speechTranscriber.results {
-        if !result.isFinal && configuration.includePartialResults {
-          // Update current text with partial results for UI
-          currentText = result.text.description
-        } else if result.isFinal {
-          // Accumulate final results
-          finalText += result.text.description + " "
-          currentText = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+      if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+        // Use new Speech framework for iOS 26+
+        return try await transcribeFileWithNewAPI(at: fileURL)
+      } else {
+        // Use legacy SFSpeechRecognizer for older versions
+        return try await transcribeFileWithLegacyAPI(at: fileURL)
       }
-
-      return finalText.trimmingCharacters(in: .whitespacesAndNewlines)
 
     } catch let auralError as AuralError {
       error = auralError
@@ -449,9 +440,6 @@ extension AuralKit {
   ///   - fileURL: URL of the audio file to transcribe
   ///   - onResult: Callback function that receives transcription results as they arrive
   /// - Throws: AuralError if transcription fails or file cannot be read
-  @available(iOS 26.0, macOS 26.0, *)
-  @available(tvOS, unavailable)
-  @available(watchOS, unavailable)
   public func transcribeFile(
     at fileURL: URL, onResult: @escaping @MainActor @Sendable (AuralResult) -> Void
   ) async throws {
@@ -472,37 +460,12 @@ extension AuralKit {
       // Prepare for transcription
       try await prepareForTranscription()
 
-      // Open the audio file
-      let audioFile = try AVAudioFile(forReading: fileURL)
-
-      // Create transcriber with the specified language
-      let speechTranscriber = SpeechTranscriber(
-        locale: configuration.language.locale,
-        transcriptionOptions: [],
-        reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
-        attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
-      )
-
-      // Create analyzer with the audio file directly - this automatically starts processing
-      let _ = try await SpeechAnalyzer(
-        inputAudioFile: audioFile,
-        modules: [speechTranscriber],
-        finishAfterFile: true  // Automatically finish when file is processed
-      )
-
-      // Process results as they come in (analyzer is already running)
-      for try await result in speechTranscriber.results {
-        let auralResult = AuralResult(
-          text: result.text.description,
-          confidence: 1.0,  // SpeechTranscriber doesn't provide confidence in the new API
-          isPartial: !result.isFinal,
-          timestamp: extractTimestamp(from: result)
-        )
-
-        if configuration.includePartialResults || !auralResult.isPartial {
-          onResult(auralResult)
-          currentText = auralResult.text
-        }
+      if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+        // Use new Speech framework for iOS 26+
+        try await transcribeFileWithNewAPI(at: fileURL, onResult: onResult)
+      } else {
+        // Use legacy SFSpeechRecognizer for older versions
+        try await transcribeFileWithLegacyAPI(at: fileURL, onResult: onResult)
       }
 
     } catch let auralError as AuralError {
@@ -521,12 +484,13 @@ extension AuralKit {
   /// AVAudioFile, which can be useful when you need more control over
   /// file handling or when working with audio from non-file sources.
   ///
+  /// Note: This method is only available on iOS 26.0+ as it requires the new Speech framework.
+  /// For older OS versions, use transcribeFile(at:) with a file URL instead.
+  ///
   /// - Parameter audioFile: The AVAudioFile instance to transcribe
   /// - Returns: The complete transcribed text
   /// - Throws: AuralError if transcription fails
-  @available(iOS 26.0, macOS 26.0, *)
-  @available(tvOS, unavailable)
-  @available(watchOS, unavailable)
+  @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
   public func transcribeAudioFile(_ audioFile: AVAudioFile) async throws -> String {
     guard !isTranscribing else {
       throw AuralError.recognitionFailed
@@ -585,10 +549,108 @@ extension AuralKit {
 
 extension AuralKit {
 
+  /// Transcribes a file using the new iOS 26+ Speech framework
+  @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
+  private func transcribeFileWithNewAPI(at fileURL: URL) async throws -> String {
+    // Open the audio file
+    let audioFile = try AVAudioFile(forReading: fileURL)
+
+    // Create transcriber with the specified language
+    let speechTranscriber = SpeechTranscriber(
+      locale: configuration.language.locale,
+      transcriptionOptions: [],
+      reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
+      attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
+    )
+
+    // Create analyzer with the audio file directly - this automatically starts processing
+    let _ = try await SpeechAnalyzer(
+      inputAudioFile: audioFile,
+      modules: [speechTranscriber],
+      finishAfterFile: true  // Automatically finish when file is processed
+    )
+
+    var finalText = ""
+
+    // Process results as they come in (analyzer is already running)
+    for try await result in speechTranscriber.results {
+      if !result.isFinal && configuration.includePartialResults {
+        // Update current text with partial results for UI
+        currentText = result.text.description
+      } else if result.isFinal {
+        // Accumulate final results
+        finalText += result.text.description + " "
+        currentText = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+      }
+    }
+
+    return finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  /// Transcribes a file using the legacy SFSpeechRecognizer API
+  private func transcribeFileWithLegacyAPI(at fileURL: URL) async throws -> String {
+    // Use legacy recognizer from the engine
+    if let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
+      let recognizer = speechAnalyzer.getLegacyRecognizer()
+      return try await recognizer.transcribeFile(at: fileURL)
+    } else {
+      throw AuralError.recognitionFailed
+    }
+  }
+
+  /// Transcribes a file with callbacks using the new iOS 26+ Speech framework
+  @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
+  private func transcribeFileWithNewAPI(at fileURL: URL, onResult: @escaping @MainActor @Sendable (AuralResult) -> Void) async throws {
+    // Open the audio file
+    let audioFile = try AVAudioFile(forReading: fileURL)
+
+    // Create transcriber with the specified language
+    let speechTranscriber = SpeechTranscriber(
+      locale: configuration.language.locale,
+      transcriptionOptions: [],
+      reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
+      attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
+    )
+
+    // Create analyzer with the audio file directly - this automatically starts processing
+    let _ = try await SpeechAnalyzer(
+      inputAudioFile: audioFile,
+      modules: [speechTranscriber],
+      finishAfterFile: true  // Automatically finish when file is processed
+    )
+
+    // Process results as they come in (analyzer is already running)
+    for try await result in speechTranscriber.results {
+      let auralResult = AuralResult(
+        text: result.text.description,
+        confidence: 1.0,  // SpeechTranscriber doesn't provide confidence in the new API
+        isPartial: !result.isFinal,
+        timestamp: extractTimestamp(from: result)
+      )
+
+      if configuration.includePartialResults || !auralResult.isPartial {
+        onResult(auralResult)
+        currentText = auralResult.text
+      }
+    }
+  }
+
+  /// Transcribes a file with callbacks using the legacy SFSpeechRecognizer API
+  private func transcribeFileWithLegacyAPI(at fileURL: URL, onResult: @escaping @MainActor @Sendable (AuralResult) -> Void) async throws {
+    // Use legacy recognizer from the engine
+    if let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
+      let recognizer = speechAnalyzer.getLegacyRecognizer()
+      try await recognizer.transcribeFile(at: fileURL, onResult: onResult)
+    } else {
+      throw AuralError.recognitionFailed
+    }
+  }
+
   /// Extracts timestamp information from a SpeechTranscriber result.
   ///
   /// - Parameter result: The SpeechTranscriber result to extract timing from
   /// - Returns: The timestamp in seconds, or 0 if not available
+  @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
   private func extractTimestamp(from result: SpeechTranscriber.Result) -> TimeInterval {
     // For iOS 26 SpeechTranscriber, timestamp extraction would depend on
     // the specific attributes available in the result. This is a placeholder
