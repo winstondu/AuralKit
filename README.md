@@ -2,6 +2,14 @@
 
 A Swift library for speech-to-text transcription using Apple's new SpeechAnalyzer APIs.
 
+## Support
+
+Love this project? Check out my books to explore more of AI and iOS development:
+- [Exploring AI for iOS Development](https://academy.rudrank.com/product/ai)
+- [Exploring AI-Assisted Coding for iOS Development](https://academy.rudrank.com/product/ai-assisted-coding)
+
+Your support helps to keep this project growing!
+
 ## Features
 
 - **Simple API**: Start transcribing with a single method call
