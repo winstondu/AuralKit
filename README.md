@@ -1,6 +1,6 @@
 # AuralKit
 
-A Swift library for speech-to-text transcription using Apple's new SpeechAnalyzer APIs.
+A Swift library for speech-to-text transcription using Apple's Speech framework, with support for both the new SpeechAnalyzer APIs (iOS 26+) and legacy SFSpeechRecognizer (iOS 17+).
 
 ## Support
 
@@ -18,11 +18,28 @@ Your support helps to keep this project growing!
 - **Fluent Configuration**: Chain method calls to customize behavior
 - **Multiple Languages**: Support for various speech recognition languages
 - **Quality Settings**: Configurable processing quality levels
+- **Backward Compatibility**: Works with iOS 17+, macOS 14+, visionOS 1.1+
+- **Automatic API Selection**: Uses the best available Speech API for your OS version
 
 ## Requirements
 
-- iOS 26.0+, macOS 26.0+, visionOS 26.0+
+- iOS 17.0+, macOS 14.0+, visionOS 1.1+
 - Swift 6.2+
+
+### Platform-Specific Features
+
+**All Platforms (iOS 17+, macOS 14+, visionOS 1.1+):**
+- Live speech recognition
+- Audio file transcription
+- Real-time partial results
+- Multiple language support
+- SwiftUI integration
+
+**iOS 26+, macOS 26+, visionOS 26+ only:**
+- Advanced SpeechAnalyzer API with better performance
+- Voice Activity Detection (SpeechDetector)
+- Direct AVAudioFile transcription
+- Enhanced audio analysis capabilities
 
 ## Usage
 
@@ -68,6 +85,20 @@ struct ContentView: View {
             }
         }
     }
+}
+```
+
+### File Transcription
+
+```swift
+// Transcribe an audio file
+let audioURL = Bundle.main.url(forResource: "recording", withExtension: "wav")!
+let text = try await auralKit.transcribeFile(at: audioURL)
+
+// With progress callbacks
+try await auralKit.transcribeFile(at: audioURL) { result in
+    print("Progress: \(result.text)")
+    print("Is partial: \(result.isPartial)")
 }
 ```
 
