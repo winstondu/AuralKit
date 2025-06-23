@@ -3,29 +3,36 @@ import Foundation
 import Speech
 import OSLog
 
-/// Buffer converter for audio format conversion
-internal final class BufferConverter: @unchecked Sendable {
+/// Buffer converter for audio format conversion - Thread-safe implementation
+internal actor BufferConverter {
     enum Error: Swift.Error {
         case failedToCreateConverter
         case failedToCreateConversionBuffer
         case conversionFailed(NSError?)
     }
     
-    private var converter: AVAudioConverter?
+    private var converters: [String: AVAudioConverter] = [:]
     
-    func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
+    func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) async throws -> AVAudioPCMBuffer {
         let inputFormat = buffer.format
         guard inputFormat != format else {
             return buffer
         }
         
-        if converter == nil || converter?.outputFormat != format {
-            converter = AVAudioConverter(from: inputFormat, to: format)
-            converter?.primeMethod = .none
-        }
+        // Create a unique key for this conversion
+        let key = "\(inputFormat.sampleRate)-\(inputFormat.channelCount)-\(format.sampleRate)-\(format.channelCount)"
         
-        guard let converter else {
-            throw Error.failedToCreateConverter
+        // Get or create converter
+        let converter: AVAudioConverter
+        if let existingConverter = converters[key], existingConverter.outputFormat == format {
+            converter = existingConverter
+        } else {
+            guard let newConverter = AVAudioConverter(from: inputFormat, to: format) else {
+                throw Error.failedToCreateConverter
+            }
+            newConverter.primeMethod = .none
+            converters[key] = newConverter
+            converter = newConverter
         }
         
         let sampleRateRatio = converter.outputFormat.sampleRate / converter.inputFormat.sampleRate
@@ -56,6 +63,8 @@ internal struct AuralKitEngine: AuralKitEngineProtocol, Sendable {
     let modelManager: any ModelManagerProtocol
     let bufferProcessor: any AudioBufferProcessorProtocol
     private let resourceManager = ResourceManager()
+    let permissionManager = PermissionManager()
+    let audioHardwareMonitor = AudioHardwareMonitor()
     
     init() {
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
@@ -88,10 +97,15 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     private var inputSequence: AsyncStream<AnalyzerInput>?
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var recognizerTask: Task<Void, Error>?
-    private var bufferConverter = BufferConverter()
+    private let bufferConverter = BufferConverter()
     
     init(resourceManager: ResourceManager) {
         self.resourceManager = resourceManager
+    }
+    
+    deinit {
+        // Ensure continuation is finished on deallocation
+        continuation.finish()
     }
     
     nonisolated var results: AsyncStream<AuralResult> {
@@ -219,7 +233,7 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         Self.logger.debug("Converting buffer from \(buffer.format.sampleRate)Hz to \(analyzerFormat.sampleRate)Hz")
         
         // Convert buffer to the required format
-        let convertedBuffer = try bufferConverter.convertBuffer(buffer, to: analyzerFormat)
+        let convertedBuffer = try await bufferConverter.convertBuffer(buffer, to: analyzerFormat)
         
         Self.logger.debug("Buffer converted successfully, yielding to speech analyzer")
         
@@ -397,9 +411,18 @@ internal actor AuralAudioProcessor {
         
         Self.logger.debug("Preparing and starting audio engine...")
         audioEngine.prepare()
-        try audioEngine.start()
-        isRecording = true
-        Self.logger.debug("Audio recording started successfully, isRecording = \(self.isRecording)")
+        
+        // Ensure tap is removed if start fails
+        do {
+            try audioEngine.start()
+            isRecording = true
+            Self.logger.debug("Audio recording started successfully, isRecording = \(self.isRecording)")
+        } catch {
+            // Remove tap on failure to prevent memory leak
+            audioEngine.inputNode.removeTap(onBus: 0)
+            Self.logger.error("Failed to start audio engine: \(error)")
+            throw error
+        }
     }
     
     func stopRecording() async throws {
@@ -482,10 +505,18 @@ internal actor AuralAudioProcessor {
             
             buffer.frameLength = frameLength
             
-            // Copy data back to buffer
+            // Copy data back to buffer safely
+            guard let channelData = buffer.floatChannelData else {
+                Self.logger.error("Buffer has no channel data")
+                return
+            }
+            
             data.withUnsafeBytes { bytes in
-                let floatPtr = bytes.bindMemory(to: Float.self)
-                buffer.floatChannelData![0].update(from: floatPtr.baseAddress!, count: Int(frameLength))
+                guard let baseAddress = bytes.bindMemory(to: Float.self).baseAddress else {
+                    Self.logger.error("Failed to get base address from data")
+                    return
+                }
+                channelData[0].update(from: baseAddress, count: Int(frameLength))
             }
             
             Self.logger.debug("Audio buffer reconstructed, writing to file and processing...")
@@ -615,14 +646,36 @@ internal actor AuralModelManager: ModelManagerProtocol {
 }
 
 internal struct AuralAudioBufferProcessor: AudioBufferProcessorProtocol {
-    private let converter = BufferConverter()
-    
+    // Create a new converter for each operation to ensure thread safety
     func processBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
-        do {
-            return try converter.convertBuffer(buffer, to: format)
-        } catch {
+        // For synchronous protocol compliance, we perform conversion inline
+        let inputFormat = buffer.format
+        guard inputFormat != format else {
+            return buffer
+        }
+        
+        guard let converter = AVAudioConverter(from: inputFormat, to: format) else {
             throw AuralError.audioSetupFailed
         }
+        converter.primeMethod = .none
+        
+        let sampleRateRatio = converter.outputFormat.sampleRate / converter.inputFormat.sampleRate
+        let scaledInputFrameLength = Double(buffer.frameLength) * sampleRateRatio
+        let frameCapacity = AVAudioFrameCount(scaledInputFrameLength.rounded(.up))
+        guard let conversionBuffer = AVAudioPCMBuffer(pcmFormat: converter.outputFormat, frameCapacity: frameCapacity) else {
+            throw AuralError.audioSetupFailed
+        }
+        
+        var nsError: NSError?
+        let status = converter.convert(to: conversionBuffer, error: &nsError, withInputFrom: { _, _ in
+            return buffer
+        })
+        
+        guard status != .error else {
+            throw AuralError.audioSetupFailed
+        }
+        
+        return conversionBuffer
     }
 }
 

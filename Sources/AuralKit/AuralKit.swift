@@ -66,7 +66,7 @@ public final class AuralKit {
   // MARK: - Private Properties
 
   /// Logger for AuralKit operations
-  private static let logger = Logger(subsystem: "com.auralkit", category: "AuralKit")
+  internal static let logger = Logger(subsystem: "com.auralkit", category: "AuralKit")
 
   /// The underlying engine that provides speech recognition functionality
   private let engine: AuralKitEngine
@@ -87,7 +87,7 @@ public final class AuralKit {
   private var cancellationTask: Task<Void, Never>?
   
   /// Shared state manager for coordinating across actors
-  private let stateManager = AuralState.shared
+  internal let stateManager = AuralState.shared
 
   // MARK: - Public Observable Properties
 
@@ -97,9 +97,6 @@ public final class AuralKit {
       await stateManager.isTranscribing()
     }
   }
-  
-  /// Synchronous check if transcription is active (for internal use)
-  private var isTranscribingSync: Bool = false
 
   /// The current transcribed text (updated in real-time during live transcription)
   public private(set) var currentText = ""
@@ -108,7 +105,7 @@ public final class AuralKit {
   public private(set) var downloadProgress: Double = 0.0
 
   /// The most recent error that occurred during transcription
-  public private(set) var error: AuralError?
+  public internal(set) var error: AuralError?
 
   // MARK: - Initialization
 
@@ -118,6 +115,26 @@ public final class AuralKit {
   /// and does not include partial results or timestamps.
   public init() {
     self.engine = AuralKitEngine()
+    
+    // Set up permission monitoring
+    Task { [weak self] in
+      guard let self = self else { return }
+      
+      // Monitor audio permission changes
+      await self.engine.permissionManager.onAudioPermissionChange { [weak self] isGranted in
+        await self?.handlePermissionChange(audio: isGranted)
+      }
+      
+      // Monitor speech permission changes
+      await self.engine.permissionManager.onSpeechPermissionChange { [weak self] isGranted in
+        await self?.handlePermissionChange(speech: isGranted)
+      }
+      
+      // Monitor audio hardware changes
+      await self.engine.audioHardwareMonitor.onHardwareChange { [weak self] change in
+        await self?.handleAudioHardwareChange(change)
+      }
+    }
   }
 
   /// Creates a new AuralKit instance with a custom engine.
@@ -151,10 +168,8 @@ extension AuralKit {
   /// - Parameter language: The target language for transcription
   /// - Returns: The same AuralKit instance for method chaining
   public func language(_ language: AuralLanguage) -> AuralKit {
-    guard !isTranscribingSync else {
-      Self.logger.warning("Cannot change language during active transcription")
-      return self
-    }
+    // Configuration changes are checked when actually used
+    // This prevents race conditions with async state checks
     
     configuration = AuralConfiguration(
       language: language,
@@ -176,10 +191,8 @@ extension AuralKit {
   /// - Parameter quality: The processing quality level
   /// - Returns: The same AuralKit instance for method chaining
   public func quality(_ quality: AuralQuality) -> AuralKit {
-    guard !isTranscribingSync else {
-      Self.logger.warning("Cannot change quality during active transcription")
-      return self
-    }
+    // Configuration changes are checked when actually used
+    // This prevents race conditions with async state checks
     
     configuration = AuralConfiguration(
       language: configuration.language,
@@ -201,10 +214,8 @@ extension AuralKit {
   /// - Parameter enabled: Whether to include partial results
   /// - Returns: The same AuralKit instance for method chaining
   public func includePartialResults(_ enabled: Bool = true) -> AuralKit {
-    guard !isTranscribingSync else {
-      Self.logger.warning("Cannot change partial results setting during active transcription")
-      return self
-    }
+    // Configuration changes are checked when actually used
+    // This prevents race conditions with async state checks
     
     configuration = AuralConfiguration(
       language: configuration.language,
@@ -227,10 +238,8 @@ extension AuralKit {
   /// - Parameter enabled: Whether to include timestamp information
   /// - Returns: The same AuralKit instance for method chaining
   public func includeTimestamps(_ enabled: Bool = true) -> AuralKit {
-    guard !isTranscribingSync else {
-      Self.logger.warning("Cannot change timestamps setting during active transcription")
-      return self
-    }
+    // Configuration changes are checked when actually used
+    // This prevents race conditions with async state checks
     
     configuration = AuralConfiguration(
       language: configuration.language,
@@ -275,13 +284,11 @@ extension AuralKit {
     }
 
     error = nil
-    isTranscribingSync = true
     
     // Begin state transition
     try await stateManager.beginPreparing()
 
     defer {
-      isTranscribingSync = false
       Task {
         await stateManager.completeStop()
       }
@@ -335,10 +342,14 @@ extension AuralKit {
       
       // Create timeout task
       let timeoutTask = Task {
-        try? await Task.sleep(nanoseconds: 300_000_000_000) // 5 minutes timeout
-        if await !timeoutActor.hasReceivedFinalResult {
-          Self.logger.error("Transcription timed out after 5 minutes")
-          transcriptionTask?.cancel()
+        do {
+          try await Task.sleep(nanoseconds: 300_000_000_000) // 5 minutes timeout
+          if await !timeoutActor.hasReceivedFinalResult {
+            Self.logger.error("Transcription timed out after 5 minutes")
+            transcriptionTask?.cancel()
+          }
+        } catch {
+          // Task was cancelled - this is expected
         }
       }
       
@@ -389,7 +400,6 @@ extension AuralKit {
     }
 
     error = nil
-    isTranscribingSync = true
     liveTranscriptionHandler = onResult
 
     do {
@@ -434,20 +444,24 @@ extension AuralKit {
               currentText = result.text
             }
           }
-        } catch {
-          // This catch is needed for errors from the async stream
-          Self.logger.error("Error in transcription stream: \(error)")
-          self.error = error as? AuralError ?? AuralError.recognitionFailed
         }
       }
       
       // Setup timeout monitoring for live transcription
-      cancellationTask = Task {
+      cancellationTask = Task { [weak self] in
         // Monitor for inactivity - if no results for 30 seconds, log warning
         var lastUpdateTime = Date()
+        var previousText = ""
         
         while !Task.isCancelled {
-          try? await Task.sleep(nanoseconds: 30_000_000_000) // Check every 30 seconds
+          do {
+            try await Task.sleep(nanoseconds: 30_000_000_000) // Check every 30 seconds
+          } catch {
+            // Task was cancelled
+            break
+          }
+          
+          guard let self = self else { break }
           
           let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
           if timeSinceLastUpdate > 30 {
@@ -455,15 +469,16 @@ extension AuralKit {
           }
           
           // Update time when we get new text
-          if currentText != "" {
+          if self.currentText != previousText {
             lastUpdateTime = Date()
+            previousText = self.currentText
           }
         }
       }
 
     } catch let auralError as AuralError {
       error = auralError
-      isTranscribingSync = false
+      // State managed by state manager
       await stateManager.handleError(auralError)
       // Ensure cleanup on error
       await engine.cleanup()
@@ -474,7 +489,7 @@ extension AuralKit {
       Self.logger.error("\(detailedError)")
       let auralError = detailedError.toAuralError()
       self.error = auralError
-      isTranscribingSync = false
+      // State managed by state manager
       await stateManager.handleError(auralError)
       // Ensure cleanup on error
       await engine.cleanup()
@@ -493,7 +508,7 @@ extension AuralKit {
     guard await stateManager.isTranscribing() else { return }
 
     defer {
-      isTranscribingSync = false
+      // State managed by state manager
       liveTranscriptionHandler = nil
       Task {
         await stateManager.completeStop()
@@ -573,10 +588,10 @@ extension AuralKit {
     }
 
     error = nil
-    isTranscribingSync = true
+    // State managed by state manager
 
     defer {
-      isTranscribingSync = false
+      // State managed by state manager
     }
 
     do {
@@ -620,11 +635,10 @@ extension AuralKit {
     }
 
     error = nil
-    isTranscribingSync = true
     liveTranscriptionHandler = onResult
 
     defer {
-      isTranscribingSync = false
+      // State managed by state manager
       liveTranscriptionHandler = nil
     }
 
@@ -666,10 +680,10 @@ extension AuralKit {
     }
 
     error = nil
-    isTranscribingSync = true
+    // State managed by state manager
 
     defer {
-      isTranscribingSync = false
+      // State managed by state manager
     }
 
     do {

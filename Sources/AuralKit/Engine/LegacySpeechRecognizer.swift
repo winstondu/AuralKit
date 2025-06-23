@@ -42,6 +42,13 @@ internal actor LegacySpeechRecognizer: LegacySpeechRecognizerProtocol {
     }
     
     deinit {
+        // Cancel any ongoing tasks
+        timeoutTask?.cancel()
+        recognitionTask?.cancel()
+        
+        // Finish the continuation
+        continuation.finish()
+        
         // Clean up any temporary files
         for url in temporaryFiles {
             try? FileManager.default.removeItem(at: url)
@@ -137,8 +144,16 @@ internal actor LegacySpeechRecognizer: LegacySpeechRecognizerProtocol {
         
         // Start recognition task
         recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
-            Task { @Sendable [weak self] in
-                await self?.handleRecognitionResult(result, error: error)
+            guard let self = self else { return }
+            
+            // Extract data from result before passing to async context
+            let resultText = result?.bestTranscription.formattedString
+            let isFinal = result?.isFinal ?? false
+            let confidence = result.map { self.extractConfidenceSync(from: $0) } ?? 1.0
+            let timestamp = result.map { self.extractTimestampSync(from: $0) } ?? 0.0
+            
+            Task {
+                await self.handleRecognitionResultData(text: resultText, confidence: confidence, isPartial: !isFinal, timestamp: timestamp, error: error)
             }
         }
         
@@ -320,7 +335,9 @@ internal actor LegacySpeechRecognizer: LegacySpeechRecognizerProtocol {
         // Perform recognition with progress callbacks and timeout
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let recognitionTask = recognizer.recognitionTask(with: request) { result, error in
+                let recognitionTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+                    guard let self = self else { return }
+                    
                     if let error = error {
                         Self.logger.error("File transcription error: \(error)")
                         Task {
@@ -330,18 +347,23 @@ internal actor LegacySpeechRecognizer: LegacySpeechRecognizerProtocol {
                     }
                     
                     if let result = result {
+                        let text = result.bestTranscription.formattedString
+                        let confidence = self.extractConfidenceSync(from: result)
+                        let timestamp = self.extractTimestampSync(from: result)
+                        let isFinal = result.isFinal
+                        
                         let auralResult = AuralResult(
-                            text: result.bestTranscription.formattedString,
-                            confidence: self.extractConfidence(from: result),
-                            isPartial: !result.isFinal,
-                            timestamp: self.extractTimestamp(from: result)
+                            text: text,
+                            confidence: confidence,
+                            isPartial: !isFinal,
+                            timestamp: timestamp
                         )
                         
                         Task { @MainActor in
                             onResult(auralResult)
                         }
                         
-                        if result.isFinal {
+                        if isFinal {
                             Self.logger.debug("File transcription completed")
                             Task {
                                 await taskCompletion.complete()
@@ -423,6 +445,52 @@ internal actor LegacySpeechRecognizer: LegacySpeechRecognizerProtocol {
         return 0.0
     }
     
+    // Synchronous versions for use in non-isolated contexts
+    private nonisolated func extractConfidenceSync(from result: SFSpeechRecognitionResult) -> Double {
+        let segments = result.bestTranscription.segments
+        guard !segments.isEmpty else { return 1.0 }
+        
+        let totalConfidence = segments.reduce(0.0) { $0 + Double($1.confidence) }
+        return totalConfidence / Double(segments.count)
+    }
+    
+    private nonisolated func extractTimestampSync(from result: SFSpeechRecognitionResult) -> TimeInterval {
+        if let lastSegment = result.bestTranscription.segments.last {
+            return lastSegment.timestamp + lastSegment.duration
+        }
+        return 0.0
+    }
+    
+    private func handleRecognitionResultData(text: String?, confidence: Double, isPartial: Bool, timestamp: TimeInterval, error: Error?) async {
+        if let error = error {
+            // Check if it's a real error or just end of recognition
+            let nsError = error as NSError
+            if nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203 {
+                // This is just "no speech detected", not a real error
+                Self.logger.debug("No speech detected")
+            } else {
+                Self.logger.error("Recognition error: \(error)")
+            }
+            return
+        }
+        
+        guard let text = text else { return }
+        
+        let auralResult = AuralResult(
+            text: text,
+            confidence: confidence,
+            isPartial: isPartial,
+            timestamp: timestamp
+        )
+        
+        continuation.yield(auralResult)
+        
+        // Reset timeout on new results
+        if state == .recognizing {
+            resetTimeout()
+        }
+    }
+    
     private func requestSpeechPermission() async throws {
         let authStatus = SFSpeechRecognizer.authorizationStatus()
         
@@ -466,8 +534,14 @@ internal actor LegacySpeechRecognizer: LegacySpeechRecognizerProtocol {
     private func startTimeoutMonitoring() {
         timeoutTask?.cancel()
         timeoutTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(self?.defaultTimeout ?? 300) * 1_000_000_000)
-            await self?.handleTimeout()
+            do {
+                guard let timeout = self?.defaultTimeout else { return }
+                try await Task.sleep(nanoseconds: UInt64(timeout) * 1_000_000_000)
+                guard let self = self else { return }
+                await self.handleTimeout()
+            } catch {
+                // Task was cancelled
+            }
         }
     }
     
@@ -597,15 +671,24 @@ internal actor LegacyAudioProcessor {
             }
         }
         
-        // Prepare and start audio engine
+        // Prepare and start audio engine with proper error handling
         audioEngine.prepare()
-        try audioEngine.start()
-        isRecording = true
         
-        // NOW start the recognition task after audio is flowing
-        try await recognizer.startRecognitionTask()
-        
-        Self.logger.debug("Legacy audio recording started")
+        do {
+            try audioEngine.start()
+            isRecording = true
+            
+            // NOW start the recognition task after audio is flowing
+            try await recognizer.startRecognitionTask()
+            
+            Self.logger.debug("Legacy audio recording started")
+        } catch {
+            // Remove tap on failure to prevent memory leak
+            audioEngine.inputNode.removeTap(onBus: 0)
+            isRecording = false
+            Self.logger.error("Failed to start audio engine or recognition: \(error)")
+            throw error
+        }
     }
     
     func stopRecording() async throws {

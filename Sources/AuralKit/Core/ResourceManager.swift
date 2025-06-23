@@ -71,14 +71,24 @@ internal actor ResourceManager {
         let resourceCount = cleanupQueue.count
         Self.logger.debug("Starting cleanup of \(fileCount) files and \(resourceCount) resources")
         
-        // Clean up all temporary files
-        for url in temporaryFiles {
-            await cleanupTemporaryFile(url)
-        }
-        
-        // Execute all cleanup operations
-        for cleanup in cleanupQueue {
-            await cleanup()
+        // Clean up files and resources in parallel for efficiency
+        await withTaskGroup(of: Void.self) { group in
+            // Add file cleanup tasks
+            for url in temporaryFiles {
+                group.addTask { [weak self] in
+                    await self?.cleanupTemporaryFile(url)
+                }
+            }
+            
+            // Add resource cleanup tasks
+            for cleanup in cleanupQueue {
+                group.addTask {
+                    await cleanup()
+                }
+            }
+            
+            // Wait for all cleanup tasks to complete
+            await group.waitForAll()
         }
         
         cleanupQueue.removeAll()
