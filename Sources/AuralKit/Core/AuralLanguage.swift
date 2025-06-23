@@ -40,19 +40,19 @@ public enum AuralLanguage: Sendable, Hashable {
     var locale: Locale {
         switch self {
         case .english:
-            // Use current locale if it's English, otherwise default to en-US
-            let current = Locale.current
-            if current.language.languageCode?.identifier == "en" {
-                return current
-            }
+            // Use BCP-47 format for Speech framework compatibility
             return Locale(identifier: "en-US")
         case .spanish:
+            // Use BCP-47 format for Speech framework compatibility
             return Locale(identifier: "es-ES")
         case .french:
+            // Use BCP-47 format for Speech framework compatibility
             return Locale(identifier: "fr-FR")
         case .german:
+            // Use BCP-47 format for Speech framework compatibility
             return Locale(identifier: "de-DE")
         case .chinese:
+            // Use BCP-47 format for Speech framework compatibility
             return Locale(identifier: "zh-CN")
         case .custom(let locale):
             return locale

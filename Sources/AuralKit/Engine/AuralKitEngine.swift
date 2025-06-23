@@ -123,8 +123,11 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         // Note: As of iOS 26, SpeechTranscriber doesn't expose direct quality settings
         // The framework automatically adjusts based on device capabilities
         
+        // Ensure we use the correct locale format - try with underscore format first
+        let normalizedLocale = normalizeLocaleForSpeechTranscriber(configuration.language.locale)
+        
         speechTranscriber = SpeechTranscriber(
-            locale: configuration.language.locale,
+            locale: normalizedLocale,
             transcriptionOptions: [],
             reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
             attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
@@ -323,6 +326,18 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
             Self.logger.error("\(detailedError)")
             throw detailedError.toAuralError()
         }
+    }
+    
+    /// Normalize locale for SpeechTranscriber which expects BCP-47 format
+    private func normalizeLocaleForSpeechTranscriber(_ locale: Locale) -> Locale {
+        let identifier = locale.identifier
+        Self.logger.debug("Normalizing locale identifier: \(identifier)")
+        
+        // SpeechTranscriber expects BCP-47 format (e.g., en-US not en_US)
+        // Use the .bcp47 identifier format
+        let bcp47Identifier = locale.identifier(.bcp47)
+        Self.logger.debug("Using BCP-47 locale: \(bcp47Identifier)")
+        return Locale(identifier: bcp47Identifier)
     }
 }
 

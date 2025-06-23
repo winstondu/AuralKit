@@ -1,5 +1,7 @@
 @preconcurrency import Foundation
+#if os(iOS) || os(tvOS)
 import UIKit
+#endif
 import OSLog
 
 /// Monitors memory pressure and helps manage resources during low memory conditions

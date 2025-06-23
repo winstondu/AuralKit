@@ -1,8 +1,9 @@
 import SwiftUI
+import AuralKit
 import AVFoundation
 
 struct ConfigurationTestView: View {
-    @StateObject private var auralKit = AuralKit()
+    @State private var auralKit = AuralKit()
     @State private var testResults: [String] = []
     @State private var isRunningTests = false
     
@@ -164,7 +165,7 @@ struct ConfigurationTestView: View {
 // MARK: - Example Usage in ContentView
 
 struct EnhancedContentView: View {
-    @StateObject private var auralKit = AuralKit()
+    @State private var auralKit = AuralKit()
     @State private var showingTests = false
     
     var body: some View {

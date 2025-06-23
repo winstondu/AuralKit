@@ -117,10 +117,10 @@ internal actor AudioHardwareMonitor {
   }
 
   /// Handle audio route changes
+  #if os(iOS) || os(tvOS)
   private func handleRouteChange(reasonValue: UInt?, previousRoute: AVAudioSessionRouteDescription?)
     async
   {
-    #if os(iOS) || os(tvOS)
       guard let reasonValue = reasonValue,
         let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue)
       else {
@@ -155,12 +155,12 @@ internal actor AudioHardwareMonitor {
       default:
         break
       }
-    #endif
   }
+  #endif
 
   /// Handle audio interruptions
+  #if os(iOS) || os(tvOS)
   private func handleInterruption(typeValue: UInt?, optionsValue: UInt?) async {
-    #if os(iOS) || os(tvOS)
       guard let typeValue = typeValue,
         let type = AVAudioSession.InterruptionType(rawValue: typeValue)
       else {
@@ -187,8 +187,8 @@ internal actor AudioHardwareMonitor {
       @unknown default:
         Self.logger.warning("Unknown interruption type: \(typeValue)")
       }
-    #endif
   }
+  #endif
 
   /// Handle media services reset
   private func handleMediaServicesReset() async {
@@ -197,8 +197,8 @@ internal actor AudioHardwareMonitor {
   }
 
   /// Handle silence secondary audio hint
+  #if os(iOS) || os(tvOS)
   private func handleSilenceSecondaryAudioHint(typeValue: UInt?) async {
-    #if os(iOS) || os(tvOS)
       guard let typeValue = typeValue,
         let type = AVAudioSession.SilenceSecondaryAudioHintType(rawValue: typeValue)
       else {
@@ -217,8 +217,8 @@ internal actor AudioHardwareMonitor {
       @unknown default:
         Self.logger.warning("Unknown silence secondary audio hint type: \(typeValue)")
       }
-    #endif
   }
+  #endif
 
   /// Notify all registered handlers of a hardware change
   private func notifyHandlers(_ change: AudioHardwareChange) async {
