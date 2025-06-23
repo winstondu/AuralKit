@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var showingOneShotResult = false
     @State private var oneShotResult = ""
     @State private var showingSettings = false
+    @State private var isTranscribing = false
     
     var body: some View {
         #if os(iOS)
@@ -63,7 +64,7 @@ struct ContentView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Image(systemName: "mic.circle.fill")
-                        .foregroundColor(auralKit.isTranscribing ? .red : .gray)
+                        .foregroundColor(isTranscribing ? .red : .gray)
                         .font(.title2)
                     Text("Live Transcription")
                         .font(.headline)
@@ -82,12 +83,12 @@ struct ContentView: View {
                 
                 Button(action: toggleLiveTranscription) {
                     HStack {
-                        Image(systemName: auralKit.isTranscribing ? "stop.circle.fill" : "mic.circle.fill")
-                        Text(auralKit.isTranscribing ? "Stop Listening" : "Start Listening")
+                        Image(systemName: isTranscribing ? "stop.circle.fill" : "mic.circle.fill")
+                        Text(isTranscribing ? "Stop Listening" : "Start Listening")
                     }
                     .frame(maxWidth: .infinity)
                     .padding()
-                    .background(auralKit.isTranscribing ? Color.red : Color.blue)
+                    .background(isTranscribing ? Color.red : Color.blue)
                     .foregroundColor(.white)
                     .cornerRadius(12)
                     .font(.headline)
@@ -119,7 +120,7 @@ struct ContentView: View {
                     .cornerRadius(12)
                     .font(.headline)
                 }
-                .disabled(auralKit.isTranscribing)
+                .disabled(isTranscribing)
             }
             
             // Status & Error Display
@@ -177,6 +178,10 @@ struct ContentView: View {
         .onChange(of: includeTimestamps) { _, newValue in
             updateConfiguration()
         }
+        .task {
+            // Initialize isTranscribing state
+            isTranscribing = await auralKit.isTranscribing
+        }
     }
     
     private var settingsButton: some View {
@@ -191,17 +196,28 @@ struct ContentView: View {
         Task {
             do {
                 Self.logger.debug("Starting toggle operation...")
+                // Update local state optimistically
+                isTranscribing = !isTranscribing
+                
                 try await auralKit.toggle()
                 Self.logger.debug("Toggle completed successfully")
+                
+                // Sync state after successful toggle
+                isTranscribing = await auralKit.isTranscribing
             } catch {
                 Self.logger.error("Live transcription error: \(error)")
+                // Revert state on error
+                isTranscribing = await auralKit.isTranscribing
+                
                 // Update UI with error
+                let currentlyTranscribing = await auralKit.isTranscribing
                 await MainActor.run {
                     // Force update the UI state if there's an error
-                    if auralKit.isTranscribing {
+                    if currentlyTranscribing {
                         // Force stop if there's an issue
                         Task {
                             try? await auralKit.stopTranscription()
+                            isTranscribing = false
                         }
                     }
                 }

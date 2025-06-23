@@ -9,11 +9,17 @@ internal protocol LegacySpeechRecognizerProtocol: Actor {
     /// Configure the recognizer with the given configuration
     func configure(with configuration: AuralConfiguration) async throws
     
-    /// Start speech recognition
+    /// Start speech recognition (prepares but doesn't start task)
     func startRecognition() async throws
+    
+    /// Start the recognition task after audio is ready
+    func startRecognitionTask() async throws
     
     /// Stop speech recognition
     func stopRecognition() async throws
+    
+    /// Finish analysis and close the stream
+    func finishAnalysis() async throws
     
     /// Process audio buffer for recognition
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws
@@ -23,4 +29,10 @@ internal protocol LegacySpeechRecognizerProtocol: Actor {
     
     /// Transcribe an audio file with progress callbacks
     func transcribeFile(at url: URL, onResult: @escaping @MainActor @Sendable (AuralResult) -> Void) async throws
+    
+    /// Add a temporary file for cleanup tracking
+    func addTemporaryFile(_ url: URL)
+    
+    /// Remove and clean up a temporary file
+    func removeTemporaryFile(_ url: URL)
 }

@@ -17,6 +17,10 @@ internal struct MockAuralKitEngine: AuralKitEngineProtocol, Sendable {
         self.modelManager = modelManager
         self.bufferProcessor = bufferProcessor
     }
+    
+    func cleanup() async {
+        // Mock implementation - no resources to clean up
+    }
 }
 
 internal actor MockSpeechAnalyzer: SpeechAnalyzerProtocol {
@@ -103,6 +107,10 @@ internal actor MockSpeechAnalyzer: SpeechAnalyzerProtocol {
         for result in results {
             continuation.yield(result)
         }
+    }
+    
+    func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
+        // Mock implementation - no actual processing needed for tests
     }
 }
 

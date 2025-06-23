@@ -20,7 +20,9 @@
       "Bash(find:*)",
       "Bash(git commit:*)",
       "Bash(git push:*)",
-      "Bash(swift package:*)"
+      "Bash(swift package:*)",
+      "Bash(grep:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false

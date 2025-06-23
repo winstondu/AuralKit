@@ -55,4 +55,11 @@ internal protocol AuralKitEngineProtocol: Sendable {
     /// This component handles audio format conversion between the
     /// recording system and the speech recognition system.
     var bufferProcessor: any AudioBufferProcessorProtocol { get }
+    
+    /// Clean up all resources managed by this engine.
+    ///
+    /// This method ensures all temporary files, active resources,
+    /// and allocated memory are properly cleaned up. It should be
+    /// called when the engine is no longer needed or on error paths.
+    func cleanup() async
 }

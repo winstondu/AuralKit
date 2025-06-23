@@ -55,25 +55,32 @@ internal struct AuralKitEngine: AuralKitEngineProtocol, Sendable {
     let audioEngine: any AudioEngineProtocol
     let modelManager: any ModelManagerProtocol
     let bufferProcessor: any AudioBufferProcessorProtocol
+    private let resourceManager = ResourceManager()
     
     init() {
         if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
-            self.speechAnalyzer = AuralSpeechAnalyzer()
-            self.audioEngine = AuralAudioEngine()
+            self.speechAnalyzer = AuralSpeechAnalyzer(resourceManager: resourceManager)
+            self.audioEngine = AuralAudioEngine(resourceManager: resourceManager)
             self.modelManager = AuralModelManager()
         } else {
             // Use legacy implementations for older OS versions
-            self.speechAnalyzer = LegacyAuralSpeechAnalyzer()
-            self.audioEngine = LegacyAuralAudioEngine()
+            self.speechAnalyzer = LegacyAuralSpeechAnalyzer(resourceManager: resourceManager)
+            self.audioEngine = LegacyAuralAudioEngine(resourceManager: resourceManager)
             self.modelManager = LegacyAuralModelManager()
         }
         self.bufferProcessor = AuralAudioBufferProcessor()
+    }
+    
+    /// Clean up all resources managed by this engine
+    func cleanup() async {
+        await resourceManager.cleanupAll()
     }
 }
 
 @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
 internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     private static let logger = Logger(subsystem: "com.auralkit", category: "SpeechAnalyzer")
+    private let resourceManager: ResourceManager
     
     private let (stream, continuation) = AsyncStream.makeStream(of: AuralResult.self)
     private var speechAnalyzer: SpeechAnalyzer?
@@ -82,6 +89,10 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var recognizerTask: Task<Void, Error>?
     private var bufferConverter = BufferConverter()
+    
+    init(resourceManager: ResourceManager) {
+        self.resourceManager = resourceManager
+    }
     
     nonisolated var results: AsyncStream<AuralResult> {
         stream
@@ -95,6 +106,9 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         Self.logger.debug("Speech permission obtained")
         
         // Create transcriber with the specified language
+        // Note: As of iOS 26, SpeechTranscriber doesn't expose direct quality settings
+        // The framework automatically adjusts based on device capabilities
+        
         speechTranscriber = SpeechTranscriber(
             locale: configuration.language.locale,
             transcriptionOptions: [],
@@ -169,14 +183,23 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         recognizerTask?.cancel()
         recognizerTask = nil
         inputBuilder?.finish()
+        
+        // Clean up any resources
+        await resourceManager.cleanupAll()
     }
     
     func finishAnalysis() async throws {
+        defer {
+            recognizerTask?.cancel()
+            recognizerTask = nil
+            continuation.finish()
+            Task {
+                await resourceManager.cleanupAll()
+            }
+        }
+        
         inputBuilder?.finish()
         try await speechAnalyzer?.finalizeAndFinishThroughEndOfInput()
-        recognizerTask?.cancel()
-        recognizerTask = nil
-        continuation.finish()
     }
     
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
@@ -282,8 +305,9 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
                 Self.logger.error("No asset installation request available - model may already be installed or not needed")
             }
         } catch {
-            Self.logger.error("Model download failed: \(error)")
-            throw AuralError.networkError
+            let detailedError = DetailedError(error, context: "Model download failed")
+            Self.logger.error("\(detailedError)")
+            throw detailedError.toAuralError()
         }
     }
 }
@@ -296,8 +320,14 @@ internal actor AuralAudioProcessor {
     
     private let audioEngine = AVAudioEngine()
     private var audioFile: AVAudioFile?
+    private var audioFileURL: URL?
     private var speechAnalyzer: AuralSpeechAnalyzer?
     private let bufferConverter = BufferConverter()
+    private let resourceManager: ResourceManager
+    
+    init(resourceManager: ResourceManager) {
+        self.resourceManager = resourceManager
+    }
     
     var audioFormat: AVAudioFormat? {
         audioEngine.inputNode.outputFormat(forBus: 0)
@@ -375,10 +405,19 @@ internal actor AuralAudioProcessor {
     func stopRecording() async throws {
         guard isRecording else { return }
         
+        defer {
+            // Clean up resources in defer block
+            speechAnalyzer = nil
+            isRecording = false
+            audioFile = nil
+            audioFileURL = nil
+            Task {
+                await resourceManager.cleanupAll()
+            }
+        }
+        
         audioEngine.stop()
         audioEngine.inputNode.removeTap(onBus: 0)
-        speechAnalyzer = nil
-        isRecording = false
     }
     
     func pauseRecording() async throws {
@@ -400,10 +439,14 @@ internal actor AuralAudioProcessor {
     #endif
     
     private func setupAudioEngine() throws {
-        // Create temporary file for recording
+        // Create temporary file for recording with automatic cleanup  
         let url = FileManager.default.temporaryDirectory
-            .appending(component: UUID().uuidString)
+            .appending(component: "AuralKit-\(UUID().uuidString)")
             .appendingPathExtension(for: .wav)
+        audioFileURL = url
+        Task {
+            await resourceManager.registerTemporaryFile(url)
+        }
         
         let inputSettings = audioEngine.inputNode.inputFormat(forBus: 0).settings
         audioFile = try AVAudioFile(forWriting: url, settings: inputSettings)
@@ -460,7 +503,11 @@ internal actor AuralAudioProcessor {
 /// Simplified audio engine protocol that works with the dedicated processor
 @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
 internal actor AuralAudioEngine: AudioEngineProtocol {
-    private let processor = AuralAudioProcessor()
+    private let processor: AuralAudioProcessor
+    
+    init(resourceManager: ResourceManager) {
+        self.processor = AuralAudioProcessor(resourceManager: resourceManager)
+    }
     
     var audioFormat: AVAudioFormat? {
         get async {
@@ -583,7 +630,11 @@ internal struct AuralAudioBufferProcessor: AudioBufferProcessorProtocol {
 
 /// Legacy speech analyzer using SFSpeechRecognizer
 internal actor LegacyAuralSpeechAnalyzer: SpeechAnalyzerProtocol {
-    private let legacyRecognizer = LegacySpeechRecognizer()
+    private let legacyRecognizer: LegacySpeechRecognizer
+    
+    init(resourceManager: ResourceManager) {
+        self.legacyRecognizer = LegacySpeechRecognizer()
+    }
     
     nonisolated var results: AsyncStream<AuralResult> {
         legacyRecognizer.results
@@ -594,7 +645,8 @@ internal actor LegacyAuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     }
     
     func startAnalysis() async throws {
-        try await legacyRecognizer.startRecognition()
+        // Don't start recognition here - it will be started after audio is ready
+        // This matches the new implementation pattern
     }
     
     func stopAnalysis() async throws {
@@ -602,21 +654,26 @@ internal actor LegacyAuralSpeechAnalyzer: SpeechAnalyzerProtocol {
     }
     
     func finishAnalysis() async throws {
-        try await legacyRecognizer.stopRecognition()
+        try await legacyRecognizer.finishAnalysis()
     }
     
     func processAudioBuffer(_ buffer: AVAudioPCMBuffer) async throws {
         try await legacyRecognizer.processAudioBuffer(buffer)
     }
     
-    nonisolated func getLegacyRecognizer() -> LegacySpeechRecognizer {
+    // Fix actor isolation: return the recognizer through an async function
+    func getRecognizer() async -> LegacySpeechRecognizer {
         legacyRecognizer
     }
 }
 
 /// Legacy audio engine using AVAudioEngine directly
 internal actor LegacyAuralAudioEngine: AudioEngineProtocol {
-    private let processor = LegacyAudioProcessor()
+    private let processor: LegacyAudioProcessor
+    
+    init(resourceManager: ResourceManager) {
+        self.processor = LegacyAudioProcessor()
+    }
     
     var audioFormat: AVAudioFormat? {
         get async {

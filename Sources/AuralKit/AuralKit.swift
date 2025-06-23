@@ -69,21 +69,37 @@ public final class AuralKit {
   private static let logger = Logger(subsystem: "com.auralkit", category: "AuralKit")
 
   /// The underlying engine that provides speech recognition functionality
-  private let engine: AuralKitEngineProtocol
+  private let engine: AuralKitEngine
 
   /// Current configuration settings for speech recognition
   private var configuration: AuralConfiguration = AuralConfiguration()
+  
+  /// Flag to track if the speech analyzer has been configured
+  private var isConfigured = false
 
   /// Background task for live transcription processing
   private var transcriptionTask: Task<Void, Error>?
 
   /// Handler for live transcription results
   private var liveTranscriptionHandler: (@MainActor @Sendable (AuralResult) -> Void)?
+  
+  /// Cancellation handler for ongoing operations
+  private var cancellationTask: Task<Void, Never>?
+  
+  /// Shared state manager for coordinating across actors
+  private let stateManager = AuralState.shared
 
   // MARK: - Public Observable Properties
 
   /// Whether speech recognition is currently active
-  public private(set) var isTranscribing = false
+  public var isTranscribing: Bool {
+    get async {
+      await stateManager.isTranscribing()
+    }
+  }
+  
+  /// Synchronous check if transcription is active (for internal use)
+  private var isTranscribingSync: Bool = false
 
   /// The current transcribed text (updated in real-time during live transcription)
   public private(set) var currentText = ""
@@ -113,7 +129,7 @@ public final class AuralKit {
   ///   - engine: The engine to use for speech recognition operations
   ///   - configuration: Initial configuration (default: AuralConfiguration())
   internal init(
-    engine: AuralKitEngineProtocol, configuration: AuralConfiguration = AuralConfiguration()
+    engine: AuralKitEngine, configuration: AuralConfiguration = AuralConfiguration()
   ) {
     self.engine = engine
     self.configuration = configuration
@@ -130,15 +146,23 @@ extension AuralKit {
   /// will be used for transcription. The model for the specified
   /// language will be downloaded automatically if not available.
   ///
+  /// Note: Configuration changes are not allowed during active transcription.
+  ///
   /// - Parameter language: The target language for transcription
   /// - Returns: The same AuralKit instance for method chaining
   public func language(_ language: AuralLanguage) -> AuralKit {
+    guard !isTranscribingSync else {
+      Self.logger.warning("Cannot change language during active transcription")
+      return self
+    }
+    
     configuration = AuralConfiguration(
       language: language,
       quality: configuration.quality,
       includePartialResults: configuration.includePartialResults,
       includeTimestamps: configuration.includeTimestamps
     )
+    isConfigured = false  // Mark as needing reconfiguration
     return self
   }
 
@@ -147,15 +171,23 @@ extension AuralKit {
   /// Higher quality levels provide better accuracy but may use more
   /// computational resources and have higher latency.
   ///
+  /// Note: Configuration changes are not allowed during active transcription.
+  ///
   /// - Parameter quality: The processing quality level
   /// - Returns: The same AuralKit instance for method chaining
   public func quality(_ quality: AuralQuality) -> AuralKit {
+    guard !isTranscribingSync else {
+      Self.logger.warning("Cannot change quality during active transcription")
+      return self
+    }
+    
     configuration = AuralConfiguration(
       language: configuration.language,
       quality: quality,
       includePartialResults: configuration.includePartialResults,
       includeTimestamps: configuration.includeTimestamps
     )
+    isConfigured = false  // Mark as needing reconfiguration
     return self
   }
 
@@ -164,15 +196,23 @@ extension AuralKit {
   /// When enabled, the system delivers quick, less accurate results
   /// followed by improved results as more audio context becomes available.
   ///
+  /// Note: Configuration changes are not allowed during active transcription.
+  ///
   /// - Parameter enabled: Whether to include partial results
   /// - Returns: The same AuralKit instance for method chaining
-  public func includePartialResults(_ enabled: Bool) -> AuralKit {
+  public func includePartialResults(_ enabled: Bool = true) -> AuralKit {
+    guard !isTranscribingSync else {
+      Self.logger.warning("Cannot change partial results setting during active transcription")
+      return self
+    }
+    
     configuration = AuralConfiguration(
       language: configuration.language,
       quality: configuration.quality,
       includePartialResults: enabled,
       includeTimestamps: configuration.includeTimestamps
     )
+    isConfigured = false  // Mark as needing reconfiguration
     return self
   }
 
@@ -182,15 +222,23 @@ extension AuralKit {
   /// that can be used for subtitle generation or time-synchronized
   /// text display.
   ///
+  /// Note: Configuration changes are not allowed during active transcription.
+  ///
   /// - Parameter enabled: Whether to include timestamp information
   /// - Returns: The same AuralKit instance for method chaining
-  public func includeTimestamps(_ enabled: Bool) -> AuralKit {
+  public func includeTimestamps(_ enabled: Bool = true) -> AuralKit {
+    guard !isTranscribingSync else {
+      Self.logger.warning("Cannot change timestamps setting during active transcription")
+      return self
+    }
+    
     configuration = AuralConfiguration(
       language: configuration.language,
       quality: configuration.quality,
       includePartialResults: configuration.includePartialResults,
       includeTimestamps: enabled
     )
+    isConfigured = false  // Mark as needing reconfiguration
     return self
   }
 }
@@ -221,44 +269,88 @@ extension AuralKit {
   /// - Returns: The complete transcribed text
   /// - Throws: AuralError if transcription fails or is already in progress
   public func startTranscribing() async throws -> String {
-    guard !isTranscribing else {
+    // Check state through state manager
+    guard !(await stateManager.isTranscribing()) else {
       throw AuralError.recognitionFailed
     }
 
     error = nil
-    isTranscribing = true
+    isTranscribingSync = true
+    
+    // Begin state transition
+    try await stateManager.beginPreparing()
 
     defer {
-      isTranscribing = false
+      isTranscribingSync = false
+      Task {
+        await stateManager.completeStop()
+      }
     }
 
     do {
       try await prepareForTranscription()
       try await engine.speechAnalyzer.configure(with: configuration)
-      try await engine.speechAnalyzer.startAnalysis()
-
-      // Start audio recording with direct integration to speech analyzer
+      
+      // CRITICAL: Start audio FIRST, before speech recognition
+      // This prevents the race condition where speech recognition expects buffers
+      // but audio hasn't started yet
       if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
         if let audioEngine = engine.audioEngine as? AuralAudioEngine {
           let processor = audioEngine.getProcessor()
+          
+          // Start recording first
           try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+          
+          // Mark audio as started in state manager
+          await stateManager.audioRecordingStarted()
+          
+          // Wait for audio to be ready before starting speech analysis
+          try await stateManager.waitForAudioReady()
+          
+          // NOW start speech analysis
+          try await engine.speechAnalyzer.startAnalysis()
+          await stateManager.speechRecognitionStarted()
         }
       } else {
         // Legacy implementation
         if let audioEngine = engine.audioEngine as? LegacyAuralAudioEngine,
            let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
           let processor = audioEngine.getProcessor()
-          let recognizer = speechAnalyzer.getLegacyRecognizer()
+          let recognizer = await speechAnalyzer.getRecognizer()
+          
+          // Start speech recognition first for legacy (it creates the request)
+          try await recognizer.startRecognition()
+          
+          // Then start audio recording
           try await processor.startRecording(with: recognizer)
+          
+          // Update state
+          await stateManager.audioRecordingStarted()
+          await stateManager.speechRecognitionStarted()
         }
       }
 
       var finalText = ""
+      let timeoutActor = TimeoutActor()
+      
+      // Create timeout task
+      let timeoutTask = Task {
+        try? await Task.sleep(nanoseconds: 300_000_000_000) // 5 minutes timeout
+        if await !timeoutActor.hasReceivedFinalResult {
+          Self.logger.error("Transcription timed out after 5 minutes")
+          transcriptionTask?.cancel()
+        }
+      }
+      
+      defer {
+        timeoutTask.cancel()
+      }
 
       for await result in engine.speechAnalyzer.results {
         if !result.isPartial {
           finalText = result.text  // Use latest result, not concatenate
           currentText = finalText
+          await timeoutActor.markResultReceived()
         }
       }
 
@@ -266,10 +358,17 @@ extension AuralKit {
 
     } catch let auralError as AuralError {
       error = auralError
+      // Ensure cleanup on error
+      await engine.cleanup()
       throw auralError
     } catch {
-      let auralError = AuralError.recognitionFailed
+      // Preserve original error information
+      let detailedError = DetailedError(error, context: "Transcription failed")
+      Self.logger.error("\(detailedError)")
+      let auralError = detailedError.toAuralError()
       self.error = auralError
+      // Ensure cleanup on error
+      await engine.cleanup()
       throw auralError
     }
   }
@@ -285,17 +384,21 @@ extension AuralKit {
   public func startLiveTranscription(onResult: @escaping @MainActor @Sendable (AuralResult) -> Void)
     async throws
   {
-    guard !isTranscribing else {
+    guard !(await stateManager.isTranscribing()) else {
       throw AuralError.recognitionFailed
     }
 
     error = nil
-    isTranscribing = true
+    isTranscribingSync = true
     liveTranscriptionHandler = onResult
 
     do {
       try await prepareForTranscription()
-      try await engine.speechAnalyzer.configure(with: configuration)
+      try await configureAnalyzerIfNeeded()
+      
+      // Begin state transition
+      try await stateManager.beginPreparing()
+      
       try await engine.speechAnalyzer.startAnalysis()
 
       // Start audio recording with direct integration to speech analyzer
@@ -303,34 +406,78 @@ extension AuralKit {
         if let audioEngine = engine.audioEngine as? AuralAudioEngine {
           let processor = audioEngine.getProcessor()
           try await processor.startRecording(with: engine.speechAnalyzer as! AuralSpeechAnalyzer)
+          
+          // Mark audio as started in state manager
+          await stateManager.audioRecordingStarted()
+          await stateManager.speechRecognitionStarted()
         }
       } else {
         // Legacy implementation
         if let audioEngine = engine.audioEngine as? LegacyAuralAudioEngine,
            let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
           let processor = audioEngine.getProcessor()
-          let recognizer = speechAnalyzer.getLegacyRecognizer()
+          let recognizer = await speechAnalyzer.getRecognizer()
           try await processor.startRecording(with: recognizer)
+          
+          // Update state
+          await stateManager.audioRecordingStarted()
+          await stateManager.speechRecognitionStarted()
         }
       }
 
       transcriptionTask = Task { @MainActor in
-        for await result in engine.speechAnalyzer.results {
-          if configuration.includePartialResults || !result.isPartial {
-            onResult(result)
-            currentText = result.text
+        do {
+          let results = engine.speechAnalyzer.results
+          for try await result in results {
+            if configuration.includePartialResults || !result.isPartial {
+              onResult(result)
+              currentText = result.text
+            }
+          }
+        } catch {
+          // This catch is needed for errors from the async stream
+          Self.logger.error("Error in transcription stream: \(error)")
+          self.error = error as? AuralError ?? AuralError.recognitionFailed
+        }
+      }
+      
+      // Setup timeout monitoring for live transcription
+      cancellationTask = Task {
+        // Monitor for inactivity - if no results for 30 seconds, log warning
+        var lastUpdateTime = Date()
+        
+        while !Task.isCancelled {
+          try? await Task.sleep(nanoseconds: 30_000_000_000) // Check every 30 seconds
+          
+          let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
+          if timeSinceLastUpdate > 30 {
+            Self.logger.warning("No transcription results for \(Int(timeSinceLastUpdate)) seconds")
+          }
+          
+          // Update time when we get new text
+          if currentText != "" {
+            lastUpdateTime = Date()
           }
         }
       }
 
     } catch let auralError as AuralError {
       error = auralError
-      isTranscribing = false
+      isTranscribingSync = false
+      await stateManager.handleError(auralError)
+      // Ensure cleanup on error
+      await engine.cleanup()
       throw auralError
     } catch {
-      let auralError = AuralError.recognitionFailed
+      // Preserve original error information
+      let detailedError = DetailedError(error, context: "Live transcription failed")
+      Self.logger.error("\(detailedError)")
+      let auralError = detailedError.toAuralError()
       self.error = auralError
-      isTranscribing = false
+      isTranscribingSync = false
+      await stateManager.handleError(auralError)
+      // Ensure cleanup on error
+      await engine.cleanup()
       throw auralError
     }
   }
@@ -343,16 +490,40 @@ extension AuralKit {
   ///
   /// - Throws: AuralError if stopping fails
   public func stopTranscription() async throws {
-    guard isTranscribing else { return }
+    guard await stateManager.isTranscribing() else { return }
 
+    defer {
+      isTranscribingSync = false
+      liveTranscriptionHandler = nil
+      Task {
+        await stateManager.completeStop()
+        await engine.cleanup()
+      }
+    }
+
+    // Begin stopping process
+    await stateManager.beginStopping()
+
+    // Cancel monitoring task
+    cancellationTask?.cancel()
+    cancellationTask = nil
+    
+    // Cancel transcription task
     transcriptionTask?.cancel()
     transcriptionTask = nil
 
-    try await engine.audioEngine.stopRecording()
-    try await engine.speechAnalyzer.stopAnalysis()
-
-    isTranscribing = false
-    liveTranscriptionHandler = nil
+    // Stop audio and speech analysis
+    do {
+      try await engine.audioEngine.stopRecording()
+      await stateManager.audioRecordingStopped()
+      
+      try await engine.speechAnalyzer.stopAnalysis()
+      await stateManager.speechRecognitionStopped()
+    } catch {
+      let detailedError = DetailedError(error, context: "Error stopping transcription")
+      Self.logger.error("\(detailedError)")
+      // Continue with cleanup even if stop fails
+    }
   }
 
   /// Toggles transcription on or off.
@@ -363,7 +534,7 @@ extension AuralKit {
   ///
   /// - Throws: AuralError if the operation fails
   public func toggle() async throws {
-    if isTranscribing {
+    if await stateManager.isTranscribing() {
       try await stopTranscription()
     } else {
       try await startLiveTranscription { @MainActor [weak self] result in
@@ -397,20 +568,21 @@ extension AuralKit {
   /// - Returns: The complete transcribed text
   /// - Throws: AuralError if transcription fails or file cannot be read
   public func transcribeFile(at fileURL: URL) async throws -> String {
-    guard !isTranscribing else {
+    guard !(await stateManager.isTranscribing()) else {
       throw AuralError.recognitionFailed
     }
 
     error = nil
-    isTranscribing = true
+    isTranscribingSync = true
 
     defer {
-      isTranscribing = false
+      isTranscribingSync = false
     }
 
     do {
-      // Prepare for transcription
+      // Prepare for transcription and ensure analyzer is configured
       try await prepareForTranscription()
+      try await configureAnalyzerIfNeeded()
 
       if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
         // Use new Speech framework for iOS 26+
@@ -443,22 +615,23 @@ extension AuralKit {
   public func transcribeFile(
     at fileURL: URL, onResult: @escaping @MainActor @Sendable (AuralResult) -> Void
   ) async throws {
-    guard !isTranscribing else {
+    guard !(await stateManager.isTranscribing()) else {
       throw AuralError.recognitionFailed
     }
 
     error = nil
-    isTranscribing = true
+    isTranscribingSync = true
     liveTranscriptionHandler = onResult
 
     defer {
-      isTranscribing = false
+      isTranscribingSync = false
       liveTranscriptionHandler = nil
     }
 
     do {
-      // Prepare for transcription
+      // Prepare for transcription and ensure analyzer is configured
       try await prepareForTranscription()
+      try await configureAnalyzerIfNeeded()
 
       if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
         // Use new Speech framework for iOS 26+
@@ -484,55 +657,79 @@ extension AuralKit {
   /// AVAudioFile, which can be useful when you need more control over
   /// file handling or when working with audio from non-file sources.
   ///
-  /// Note: This method is only available on iOS 26.0+ as it requires the new Speech framework.
-  /// For older OS versions, use transcribeFile(at:) with a file URL instead.
-  ///
   /// - Parameter audioFile: The AVAudioFile instance to transcribe
   /// - Returns: The complete transcribed text
   /// - Throws: AuralError if transcription fails
-  @available(iOS 26.0, macOS 26.0, visionOS 26.0, *)
   public func transcribeAudioFile(_ audioFile: AVAudioFile) async throws -> String {
-    guard !isTranscribing else {
+    guard !(await stateManager.isTranscribing()) else {
       throw AuralError.recognitionFailed
     }
 
     error = nil
-    isTranscribing = true
+    isTranscribingSync = true
 
     defer {
-      isTranscribing = false
+      isTranscribingSync = false
     }
 
     do {
-      // Prepare for transcription
+      // Prepare for transcription and ensure analyzer is configured
       try await prepareForTranscription()
+      try await configureAnalyzerIfNeeded()
 
-      // Create transcriber with the specified language
-      let speechTranscriber = SpeechTranscriber(
-        locale: configuration.language.locale,
-        transcriptionOptions: [],
-        reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
-        attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
-      )
+      if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+        // Create transcriber with the specified language
+        let speechTranscriber = SpeechTranscriber(
+          locale: configuration.language.locale,
+          transcriptionOptions: [],
+          reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
+          attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
+        )
 
-      // Create analyzer with the audio file directly - this automatically starts processing
-      let _ = try await SpeechAnalyzer(
-        inputAudioFile: audioFile,
-        modules: [speechTranscriber],
-        finishAfterFile: true  // Automatically finish when file is processed
-      )
+        // Create analyzer with the audio file directly - this automatically starts processing
+        let _ = try await SpeechAnalyzer(
+          inputAudioFile: audioFile,
+          modules: [speechTranscriber],
+          finishAfterFile: true  // Automatically finish when file is processed
+        )
 
-      var finalText = ""
+        var finalText = ""
 
-      // Process results as they come in (analyzer is already running)
-      for try await result in speechTranscriber.results {
-        if result.isFinal {
-          finalText += result.text.description + " "
-          currentText = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Process results as they come in (analyzer is already running)
+        for try await result in speechTranscriber.results {
+          if result.isFinal {
+            finalText += result.text.description + " "
+            currentText = finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+          }
         }
-      }
 
-      return finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return finalText.trimmingCharacters(in: .whitespacesAndNewlines)
+      } else {
+        // For older OS versions, save the audio file to a temporary location and use legacy API
+        let tempURL = FileManager.default.temporaryDirectory
+          .appendingPathComponent(UUID().uuidString)
+          .appendingPathExtension("wav")
+        
+        // Create a new file at the temporary location
+        let outputFile = try AVAudioFile(forWriting: tempURL, settings: audioFile.fileFormat.settings)
+        
+        // Read and write the audio data
+        let frameCount = AVAudioFrameCount(audioFile.length)
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: audioFile.processingFormat, frameCapacity: frameCount) else {
+          throw AuralError.audioSetupFailed
+        }
+        
+        try audioFile.read(into: buffer)
+        try outputFile.write(from: buffer)
+        
+        // Use legacy API with the file URL
+        let result = try await transcribeFileWithLegacyAPI(at: tempURL)
+        
+        // Clean up temporary file
+        try? FileManager.default.removeItem(at: tempURL)
+        
+        return result
+      }
 
     } catch let auralError as AuralError {
       error = auralError
@@ -572,6 +769,16 @@ extension AuralKit {
 
     var finalText = ""
 
+    // Create timeout task for file transcription
+    let timeoutTask = Task {
+      try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes timeout for file
+      Self.logger.error("File transcription timed out after 2 minutes")
+    }
+    
+    defer {
+      timeoutTask.cancel()
+    }
+    
     // Process results as they come in (analyzer is already running)
     for try await result in speechTranscriber.results {
       if !result.isFinal && configuration.includePartialResults {
@@ -591,7 +798,7 @@ extension AuralKit {
   private func transcribeFileWithLegacyAPI(at fileURL: URL) async throws -> String {
     // Use legacy recognizer from the engine
     if let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
-      let recognizer = speechAnalyzer.getLegacyRecognizer()
+      let recognizer = await speechAnalyzer.getRecognizer()
       return try await recognizer.transcribeFile(at: fileURL)
     } else {
       throw AuralError.recognitionFailed
@@ -619,6 +826,16 @@ extension AuralKit {
       finishAfterFile: true  // Automatically finish when file is processed
     )
 
+    // Create timeout task for file transcription
+    let timeoutTask = Task {
+      try? await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes timeout for file
+      Self.logger.error("File transcription timed out after 2 minutes")
+    }
+    
+    defer {
+      timeoutTask.cancel()
+    }
+    
     // Process results as they come in (analyzer is already running)
     for try await result in speechTranscriber.results {
       let auralResult = AuralResult(
@@ -639,7 +856,7 @@ extension AuralKit {
   private func transcribeFileWithLegacyAPI(at fileURL: URL, onResult: @escaping @MainActor @Sendable (AuralResult) -> Void) async throws {
     // Use legacy recognizer from the engine
     if let speechAnalyzer = engine.speechAnalyzer as? LegacyAuralSpeechAnalyzer {
-      let recognizer = speechAnalyzer.getLegacyRecognizer()
+      let recognizer = await speechAnalyzer.getRecognizer()
       try await recognizer.transcribeFile(at: fileURL, onResult: onResult)
     } else {
       throw AuralError.recognitionFailed
@@ -676,5 +893,29 @@ extension AuralKit {
     } catch {
       throw AuralError.modelNotAvailable
     }
+  }
+  
+  /// Configures the speech analyzer if it hasn't been configured yet or if configuration has changed.
+  private func configureAnalyzerIfNeeded() async throws {
+    if !isConfigured {
+      Self.logger.debug("Configuring speech analyzer with current settings")
+      try await engine.speechAnalyzer.configure(with: configuration)
+      isConfigured = true
+    }
+  }
+}
+
+// MARK: - Helper Actor for Timeout Management
+
+/// Actor to manage timeout state in a thread-safe way
+private actor TimeoutActor {
+  private var _hasReceivedFinalResult = false
+  
+  func markResultReceived() {
+    _hasReceivedFinalResult = true
+  }
+  
+  var hasReceivedFinalResult: Bool {
+    _hasReceivedFinalResult
   }
 }
