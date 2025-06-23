@@ -1,0 +1,36 @@
+definitions:
+  triggering:
+    push: &events
+      events:
+        - push
+        - pull_request
+
+workflows:
+  auralkit:
+    name: AuralKit Workflow
+    instance_type: mac_mini_m2
+    environment:
+      xcode: 26.0
+      vars:
+        XCODE_SCHEME: "AuralKit"
+        APP_ID: "AuralKit"
+    when:
+      changeset:
+        includes:
+          - "Sources"
+          - "Tests"
+          - "AuralKitDemo"
+          - "Package.swift"
+    triggering:
+      <<: *events
+    scripts:
+      - name: Build Swift Package
+        script: |
+          swift build
+      - name: Run Tests
+        script: |
+          swift test
+    artifacts:
+      - build/**/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.app
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
