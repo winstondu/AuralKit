@@ -1,4 +1,5 @@
-import Foundation
+@preconcurrency import Foundation
+import UIKit
 import OSLog
 
 /// Monitors memory pressure and helps manage resources during low memory conditions

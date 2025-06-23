@@ -22,7 +22,12 @@
       "Bash(git push:*)",
       "Bash(swift package:*)",
       "Bash(grep:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(git tag:*)",
+      "Bash(gh release create:*)",
+      "Bash(gh release edit:*)",
+      "Bash(chmod:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false

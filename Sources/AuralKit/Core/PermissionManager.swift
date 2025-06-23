@@ -1,7 +1,11 @@
-import Foundation
+@preconcurrency import Foundation
 import AVFoundation
 import Speech
 import OSLog
+
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Manages and monitors permission changes for audio and speech recognition
 internal actor PermissionManager {
