@@ -17,7 +17,10 @@
       "Bash(xcodegen generate:*)",
       "Bash(open:*)",
       "Bash(xcodebuild:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(swift package:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false
