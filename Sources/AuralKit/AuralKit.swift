@@ -69,7 +69,7 @@ public final class AuralKit {
   internal static let logger = Logger(subsystem: "com.auralkit", category: "AuralKit")
 
   /// The underlying engine that provides speech recognition functionality
-  private let engine: AuralKitEngine
+  internal let engine: AuralKitEngine
 
   /// Current configuration settings for speech recognition
   private var configuration: AuralConfiguration = AuralConfiguration()
