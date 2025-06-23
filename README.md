@@ -16,14 +16,14 @@ Your support helps to keep this project growing!
 
 Add AuralKit to your project through Xcode:
 1. File → Add Package Dependencies
-2. Enter: `https://github.com/yourusername/AuralKit`
+2. Enter: `https://github.com/rryam/AuralKit`
 3. Click Add Package
 
 Or add it to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/yourusername/AuralKit", from: "0.0.1")
+    .package(url: "https://github.com/rryam/AuralKit", from: "0.0.1")
 ]
 ```
 
