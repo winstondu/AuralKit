@@ -123,11 +123,28 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         // Note: As of iOS 26, SpeechTranscriber doesn't expose direct quality settings
         // The framework automatically adjusts based on device capabilities
         
-        // Ensure we use the correct locale format - try with underscore format first
-        let normalizedLocale = normalizeLocaleForSpeechTranscriber(configuration.language.locale)
+        // Get the exact locale from supported locales to avoid format issues
+        let requestedLocale = configuration.language.locale
+        let supportedLocales = await SpeechTranscriber.supportedLocales
+        
+        // Find the matching locale from supported locales
+        let matchingLocale = supportedLocales.first { locale in
+            // Check both identifier formats
+            locale.identifier(.bcp47) == requestedLocale.identifier(.bcp47) ||
+            locale.identifier == requestedLocale.identifier ||
+            locale.identifier == requestedLocale.identifier.replacingOccurrences(of: "_", with: "-") ||
+            locale.identifier == requestedLocale.identifier.replacingOccurrences(of: "-", with: "_")
+        }
+        
+        guard let validLocale = matchingLocale else {
+            Self.logger.error("Locale not found in supported locales: \(requestedLocale.identifier)")
+            throw AuralError.unsupportedLanguage
+        }
+        
+        Self.logger.debug("Using supported locale: \(validLocale.identifier) (BCP-47: \(validLocale.identifier(.bcp47)))")
         
         speechTranscriber = SpeechTranscriber(
-            locale: normalizedLocale,
+            locale: validLocale,
             transcriptionOptions: [],
             reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
             attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
@@ -141,7 +158,7 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         
         // Ensure the model is available for this language
         do {
-            try await ensureModel(for: speechTranscriber, locale: configuration.language.locale)
+            try await ensureModel(for: speechTranscriber, locale: validLocale)
             Self.logger.debug("Model ensured for locale")
         } catch {
             Self.logger.warning("Model check failed: \(error), proceeding without explicit model management")
@@ -334,10 +351,15 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         Self.logger.debug("Normalizing locale identifier: \(identifier)")
         
         // SpeechTranscriber expects BCP-47 format (e.g., en-US not en_US)
-        // Use the .bcp47 identifier format
+        // First try to get the BCP-47 identifier
         let bcp47Identifier = locale.identifier(.bcp47)
-        Self.logger.debug("Using BCP-47 locale: \(bcp47Identifier)")
-        return Locale(identifier: bcp47Identifier)
+        Self.logger.debug("BCP-47 identifier: \(bcp47Identifier)")
+        
+        // Create a new locale with the BCP-47 identifier
+        let normalizedLocale = Locale(identifier: bcp47Identifier)
+        Self.logger.debug("Normalized locale identifier: \(normalizedLocale.identifier)")
+        
+        return normalizedLocale
     }
 }
 
