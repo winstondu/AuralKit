@@ -27,7 +27,8 @@
       "Bash(gh release create:*)",
       "Bash(gh release edit:*)",
       "Bash(chmod:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(swift repl:*)"
     ],
     "deny": [],
     "includeCoAuthoredBy": false

@@ -66,17 +66,29 @@ internal struct AuralKitEngine: AuralKitEngineProtocol, Sendable {
     let permissionManager = PermissionManager()
     let audioHardwareMonitor = AudioHardwareMonitor()
     
-    init() {
-        if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
-            self.speechAnalyzer = AuralSpeechAnalyzer(resourceManager: resourceManager)
-            self.audioEngine = AuralAudioEngine(resourceManager: resourceManager)
-            self.modelManager = AuralModelManager()
-        } else {
-            // Use legacy implementations for older OS versions
+    init(implementation: AuralImplementation = .automatic) {
+        // Resolve the implementation choice
+        let resolvedImpl = implementation.resolvedImplementation
+        
+        switch resolvedImpl {
+        case .modern:
+            if #available(iOS 26.0, macOS 26.0, visionOS 26.0, *) {
+                self.speechAnalyzer = AuralSpeechAnalyzer(resourceManager: resourceManager)
+                self.audioEngine = AuralAudioEngine(resourceManager: resourceManager)
+                self.modelManager = AuralModelManager()
+            } else {
+                // This should never happen due to isAvailable check, but we need to handle it
+                fatalError("Modern implementation requested but not available on this OS version")
+            }
+        case .legacy:
             self.speechAnalyzer = LegacyAuralSpeechAnalyzer(resourceManager: resourceManager)
             self.audioEngine = LegacyAuralAudioEngine(resourceManager: resourceManager)
             self.modelManager = LegacyAuralModelManager()
+        case .automatic:
+            // This case is already resolved, but included for completeness
+            fatalError("Automatic implementation should have been resolved")
         }
+        
         self.bufferProcessor = AuralAudioBufferProcessor()
     }
     
@@ -123,28 +135,14 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         // Note: As of iOS 26, SpeechTranscriber doesn't expose direct quality settings
         // The framework automatically adjusts based on device capabilities
         
-        // Get the exact locale from supported locales to avoid format issues
+        // Use the locale from configuration (now using Locale.Components)
         let requestedLocale = configuration.language.locale
-        let supportedLocales = await SpeechTranscriber.supportedLocales
+        Self.logger.debug("Requested locale: \(requestedLocale.identifier) (BCP-47: \(requestedLocale.identifier(.bcp47)))")
+        Self.logger.debug("Locale details - language: \(requestedLocale.language.languageCode?.identifier ?? "nil"), region: \(requestedLocale.region?.identifier ?? "nil")")
         
-        // Find the matching locale from supported locales
-        let matchingLocale = supportedLocales.first { locale in
-            // Check both identifier formats
-            locale.identifier(.bcp47) == requestedLocale.identifier(.bcp47) ||
-            locale.identifier == requestedLocale.identifier ||
-            locale.identifier == requestedLocale.identifier.replacingOccurrences(of: "_", with: "-") ||
-            locale.identifier == requestedLocale.identifier.replacingOccurrences(of: "-", with: "_")
-        }
-        
-        guard let validLocale = matchingLocale else {
-            Self.logger.error("Locale not found in supported locales: \(requestedLocale.identifier)")
-            throw AuralError.unsupportedLanguage
-        }
-        
-        Self.logger.debug("Using supported locale: \(validLocale.identifier) (BCP-47: \(validLocale.identifier(.bcp47)))")
-        
+        // Create the transcriber following Apple's sample pattern
         speechTranscriber = SpeechTranscriber(
-            locale: validLocale,
+            locale: requestedLocale,
             transcriptionOptions: [],
             reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
             attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
@@ -158,7 +156,7 @@ internal actor AuralSpeechAnalyzer: SpeechAnalyzerProtocol {
         
         // Ensure the model is available for this language
         do {
-            try await ensureModel(for: speechTranscriber, locale: validLocale)
+            try await ensureModel(for: speechTranscriber, locale: requestedLocale)
             Self.logger.debug("Model ensured for locale")
         } catch {
             Self.logger.warning("Model check failed: \(error), proceeding without explicit model management")

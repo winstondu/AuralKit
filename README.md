@@ -41,6 +41,21 @@ let text = try await AuralKit.startTranscribing()
 print("You said: \(text)")
 ```
 
+### Choosing Implementation
+
+AuralKit supports multiple speech recognition implementations. By default, it automatically selects the best one for your OS version:
+
+```swift
+// Automatic selection (recommended)
+let auralKit = AuralKit()
+
+// Force modern implementation (iOS 26+/macOS 26+)
+let modernKit = AuralKit(implementation: .modern)
+
+// Force legacy implementation (iOS 17+/macOS 14+)
+let legacyKit = AuralKit(implementation: .legacy)
+```
+
 ### Live Transcription with SwiftUI
 
 ```swift

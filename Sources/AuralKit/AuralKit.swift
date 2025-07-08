@@ -74,6 +74,9 @@ public final class AuralKit {
   /// Current configuration settings for speech recognition
   private var configuration: AuralConfiguration = AuralConfiguration()
   
+  /// The implementation type being used
+  public let implementation: AuralImplementation
+  
   /// Flag to track if the speech analyzer has been configured
   private var isConfigured = false
 
@@ -113,8 +116,18 @@ public final class AuralKit {
   ///
   /// The default configuration uses English language, medium quality,
   /// and does not include partial results or timestamps.
-  public init() {
-    self.engine = AuralKitEngine()
+  ///
+  /// - Parameter implementation: The speech recognition implementation to use (default: .automatic)
+  /// - Important: If you specify `.modern` on an OS version that doesn't support it,
+  ///             initialization will fail. Use `.automatic` for cross-platform compatibility.
+  public init(implementation: AuralImplementation = .automatic) {
+    // Validate implementation availability
+    guard implementation.isAvailable else {
+      fatalError("AuralKit: \(implementation) implementation is not available on this OS version")
+    }
+    
+    self.implementation = implementation
+    self.engine = AuralKitEngine(implementation: implementation)
     
     // Set up permission monitoring
     Task { [weak self] in
@@ -145,11 +158,14 @@ public final class AuralKit {
   /// - Parameters:
   ///   - engine: The engine to use for speech recognition operations
   ///   - configuration: Initial configuration (default: AuralConfiguration())
+  ///   - implementation: The implementation type (for tracking purposes)
   internal init(
-    engine: AuralKitEngine, configuration: AuralConfiguration = AuralConfiguration()
+    engine: AuralKitEngine, configuration: AuralConfiguration = AuralConfiguration(),
+    implementation: AuralImplementation = .automatic
   ) {
     self.engine = engine
     self.configuration = configuration
+    self.implementation = implementation
   }
 }
 

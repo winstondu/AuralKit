@@ -40,20 +40,20 @@ public enum AuralLanguage: Sendable, Hashable {
     var locale: Locale {
         switch self {
         case .english:
-            // Use BCP-47 format for Speech framework compatibility
-            return Locale(identifier: "en-US")
+            // Use Locale.Components as shown in Apple's sample code
+            return Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates))
         case .spanish:
-            // Use BCP-47 format for Speech framework compatibility
-            return Locale(identifier: "es-ES")
+            // Use Locale.Components for Spanish
+            return Locale(components: .init(languageCode: .spanish, script: nil, languageRegion: .spain))
         case .french:
-            // Use BCP-47 format for Speech framework compatibility
-            return Locale(identifier: "fr-FR")
+            // Use Locale.Components for French
+            return Locale(components: .init(languageCode: .french, script: nil, languageRegion: .france))
         case .german:
-            // Use BCP-47 format for Speech framework compatibility
-            return Locale(identifier: "de-DE")
+            // Use Locale.Components for German
+            return Locale(components: .init(languageCode: .german, script: nil, languageRegion: .germany))
         case .chinese:
-            // Use BCP-47 format for Speech framework compatibility
-            return Locale(identifier: "zh-CN")
+            // Use Locale.Components for Chinese
+            return Locale(components: .init(languageCode: .chinese, script: nil, languageRegion: .chinaMainland))
         case .custom(let locale):
             return locale
         }
