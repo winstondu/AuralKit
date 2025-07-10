@@ -2,6 +2,9 @@ import AVFoundation
 import Foundation
 import Speech
 import CoreMedia
+#if canImport(SpeechAnalysis)
+import SpeechAnalysis
+#endif
 
 // MARK: - Configuration
 
@@ -221,6 +224,50 @@ internal class LegacySpeechRecognizer {
     }
 }
 
+// MARK: - Buffer Converter
+
+/// Converts audio buffers between formats
+internal class BufferConverter {
+    private var converter: AVAudioConverter?
+    
+    func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
+        if buffer.format == format {
+            return buffer
+        }
+        
+        if converter == nil || converter?.inputFormat != buffer.format || converter?.outputFormat != format {
+            converter = AVAudioConverter(from: buffer.format, to: format)
+        }
+        
+        guard let converter = converter else {
+            throw AuralError.audioEngineFailure
+        }
+        
+        let outputFrameCapacity = AVAudioFrameCount(
+            Double(buffer.frameLength) * format.sampleRate / buffer.format.sampleRate
+        )
+        
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: outputFrameCapacity
+        ) else {
+            throw AuralError.audioEngineFailure
+        }
+        
+        var error: NSError?
+        converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+            outStatus.pointee = .haveData
+            return buffer
+        }
+        
+        if let error = error {
+            throw error
+        }
+        
+        return outputBuffer
+    }
+}
+
 // MARK: - AuralKit
 
 /// Simple wrapper for speech-to-text transcription using Apple's APIs
@@ -373,19 +420,116 @@ public final class AuralKit {
             throw AuralError.alreadyTranscribing
         }
         
-        // Note: Using dynamic type to avoid iOS 26 compilation requirements
-        let SpeechAnalyzer = NSClassFromString("SpeechAnalyzer") as? NSObject.Type
-        let SpeechTranscriber = NSClassFromString("SpeechTranscriber") as? NSObject.Type
+        isTranscribing = true
         
-        guard let analyzerClass = SpeechAnalyzer,
-              let transcriberClass = SpeechTranscriber else {
-            throw AuralError.recognitionNotAvailable
+        #if canImport(SpeechAnalysis)
+        // Create transcriber with options
+        let transcriber = SpeechTranscriber(
+            locale: configuration.locale,
+            transcriptionOptions: [],
+            reportingOptions: configuration.includePartialResults ? [.volatileResults] : [],
+            attributeOptions: configuration.includeTimestamps ? [.audioTimeRange] : []
+        )
+        
+        // Create analyzer
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        
+        // Ensure model is available
+        try await ensureModel(transcriber: transcriber, locale: configuration.locale)
+        
+        // Get best audio format
+        let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
+        
+        // Create input stream
+        let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
+        
+        // Start recognition task
+        let recognitionTask = Task {
+            do {
+                for try await result in transcriber.results {
+                    let auralResult = AuralResult(
+                        text: result.text,
+                        isFinal: result.isFinal,
+                        range: result.range ?? CMTimeRange(),
+                        alternatives: result.alternatives?.map { $0.text } ?? [],
+                        resultsFinalizationTime: .zero
+                    )
+                    continuation.yield(auralResult)
+                }
+            } catch {
+                continuation.finish(throwing: AuralError.unknown(error))
+            }
         }
         
-        // This is a placeholder - actual implementation would use the new APIs
-        // For now, fall back to legacy
+        // Start analyzer
+        try await analyzer.start(inputSequence: inputSequence)
+        
+        // Set up audio engine
+        let inputNode = audioEngine.inputNode
+        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        
+        // Create buffer converter
+        let converter = BufferConverter()
+        
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            guard self?.isTranscribing == true else { return }
+            
+            Task {
+                do {
+                    let converted = try converter.convertBuffer(buffer, to: analyzerFormat)
+                    let input = AnalyzerInput(buffer: converted)
+                    inputBuilder.yield(input)
+                } catch {
+                    print("Buffer conversion error: \(error)")
+                }
+            }
+        }
+        
+        audioEngine.prepare()
+        try audioEngine.start()
+        
+        // Store references for cleanup
+        self.speechTranscriber = transcriber
+        self.speechAnalyzer = analyzer
+        
+        // Monitor for stop
+        Task {
+            while isTranscribing {
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
+            
+            inputBuilder.finish()
+            try? await analyzer.finalizeAndFinishThroughEndOfInput()
+            recognitionTask.cancel()
+            continuation.finish()
+        }
+        #else
+        // Fall back to legacy if SpeechAnalysis isn't available
         try await startLegacyTranscription(continuation: continuation)
+        #endif
     }
+    
+    #if canImport(SpeechAnalysis)
+    @available(iOS 26.0, macOS 26.0, *)
+    private func ensureModel(transcriber: SpeechTranscriber, locale: Locale) async throws {
+        // Check if locale is supported
+        let supported = await SpeechTranscriber.supportedLocales
+        guard supported.map({ $0.identifier(.bcp47) }).contains(locale.identifier(.bcp47)) else {
+            throw AuralError.unsupportedLanguage
+        }
+        
+        // Check if already installed
+        let installed = await Set(SpeechTranscriber.installedLocales)
+        if installed.map({ $0.identifier(.bcp47) }).contains(locale.identifier(.bcp47)) {
+            return
+        }
+        
+        // Download if needed
+        if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            try await downloader.downloadAndInstall()
+        }
+    }
+    #endif
     
     private func startLegacyTranscription(continuation: AsyncThrowingStream<AuralResult, Error>.Continuation) async throws {
         guard !isTranscribing else {
