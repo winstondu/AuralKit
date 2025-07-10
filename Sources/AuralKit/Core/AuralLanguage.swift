@@ -1,61 +1,65 @@
 import Foundation
 
-/// Represents supported languages for speech recognition in AuralKit.
-///
-/// AuralLanguage provides a convenient way to specify the target language
-/// for speech-to-text transcription. It includes common languages with
-/// predefined locales and a custom option for specific locale requirements.
-///
-/// ## Example
-/// ```swift
-/// let auralKit = AuralKit()
-///     .language(.spanish)
-///     .startTranscribing()
-/// ```
-public enum AuralLanguage: Sendable, Hashable {
-    /// English (current locale or United States) 
-    case english
+/// Supported languages for speech recognition
+public enum AuralLanguage: String, CaseIterable, Sendable {
+    // Major Languages
+    case english = "en-US"
+    case englishUK = "en-GB"
+    case englishAustralia = "en-AU"
+    case englishCanada = "en-CA"
+    case englishIndia = "en-IN"
     
-    /// Spanish (Spain) locale  
-    case spanish
+    case spanish = "es-ES"
+    case spanishMexico = "es-MX"
+    case spanishUS = "es-US"
     
-    /// French (France) locale
-    case french
+    case french = "fr-FR"
+    case frenchCanada = "fr-CA"
     
-    /// German (Germany) locale
-    case german
+    case german = "de-DE"
+    case italian = "it-IT"
+    case portuguese = "pt-BR"
+    case portuguesePT = "pt-PT"
     
-    /// Chinese (China) locale
-    case chinese
+    case chinese = "zh-CN"
+    case chineseTraditional = "zh-TW"
+    case chineseHongKong = "zh-HK"
     
-    /// Custom locale for specific language requirements
-    /// - Parameter locale: The specific locale to use for transcription
-    case custom(Locale)
+    case japanese = "ja-JP"
+    case korean = "ko-KR"
     
-    /// The underlying locale for the language choice.
-    ///
-    /// This property provides the appropriate `Locale` instance for the
-    /// selected language, which is used internally by the speech recognition
-    /// system to configure language-specific models and processing.
-    var locale: Locale {
-        switch self {
-        case .english:
-            // Use Locale.Components as shown in Apple's sample code
-            return Locale(components: .init(languageCode: .english, script: nil, languageRegion: .unitedStates))
-        case .spanish:
-            // Use Locale.Components for Spanish
-            return Locale(components: .init(languageCode: .spanish, script: nil, languageRegion: .spain))
-        case .french:
-            // Use Locale.Components for French
-            return Locale(components: .init(languageCode: .french, script: nil, languageRegion: .france))
-        case .german:
-            // Use Locale.Components for German
-            return Locale(components: .init(languageCode: .german, script: nil, languageRegion: .germany))
-        case .chinese:
-            // Use Locale.Components for Chinese
-            return Locale(components: .init(languageCode: .chinese, script: nil, languageRegion: .chinaMainland))
-        case .custom(let locale):
-            return locale
-        }
+    // More Languages
+    case arabic = "ar-SA"
+    case dutch = "nl-NL"
+    case hindi = "hi-IN"
+    case russian = "ru-RU"
+    case swedish = "sv-SE"
+    case turkish = "tr-TR"
+    case polish = "pl-PL"
+    case indonesian = "id-ID"
+    case norwegian = "no-NO"
+    case danish = "da-DK"
+    case finnish = "fi-FI"
+    case hebrew = "he-IL"
+    case thai = "th-TH"
+    case greek = "el-GR"
+    case czech = "cs-CZ"
+    case romanian = "ro-RO"
+    case hungarian = "hu-HU"
+    case catalan = "ca-ES"
+    case croatian = "hr-HR"
+    case malay = "ms-MY"
+    case slovak = "sk-SK"
+    case ukrainian = "uk-UA"
+    case vietnamese = "vi-VN"
+    
+    /// The locale for this language
+    public var locale: Locale {
+        Locale(identifier: rawValue)
+    }
+    
+    /// User-friendly name for the language
+    public var displayName: String {
+        locale.localizedString(forIdentifier: rawValue) ?? rawValue
     }
 }

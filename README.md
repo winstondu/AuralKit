@@ -1,14 +1,12 @@
 # AuralKit
 
-A lightweight Swift library for speech-to-text transcription using Apple's Speech framework.
+A simple Swift wrapper for speech-to-text transcription using Apple's Speech APIs.
 
-## Support
+## Overview
 
-Love this project? Check out my books to explore more of AI and iOS development:
-- [Exploring AI for iOS Development](https://academy.rudrank.com/product/ai)
-- [Exploring AI-Assisted Coding for iOS Development](https://academy.rudrank.com/product/ai-assisted-coding)
-
-Your support helps to keep this project growing!
+AuralKit provides a clean, minimal API for adding speech transcription to your app. It automatically uses the best available speech recognition technology:
+- **iOS 26+/macOS 26+**: Uses the new `SpeechAnalyzer` and `SpeechTranscriber` APIs
+- **Earlier versions**: Falls back to `SFSpeechRecognizer`
 
 ## Installation
 
@@ -23,113 +21,88 @@ Or add it to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/rryam/AuralKit", from: "0.0.1")
+    .package(url: "https://github.com/rryam/AuralKit", from: "1.0.0")
 ]
 ```
 
-## Quick Start
+## Usage
 
-AuralKit provides a simple API to transcribe speech to text. Here's how to get started:
-
-### Basic Usage
+### Simple Transcription
 
 ```swift
 import AuralKit
 
-// Start transcribing and get the complete text when done
-let text = try await AuralKit.startTranscribing()
-print("You said: \(text)")
+// Just one line!
+for try await result in AuralKit.transcribe() {
+    print(result.text)
+}
 ```
 
-### Choosing Implementation
-
-AuralKit supports multiple speech recognition implementations. By default, it automatically selects the best one for your OS version:
+### With Configuration
 
 ```swift
-// Automatic selection (recommended)
-let auralKit = AuralKit()
+let kit = AuralKit()
+    .language(.spanish)  // or .locale(Locale(identifier: "es-ES"))
+    .includePartialResults(false)
 
-// Force modern implementation (iOS 26+/macOS 26+)
-let modernKit = AuralKit(implementation: .modern)
-
-// Force legacy implementation (iOS 17+/macOS 14+)
-let legacyKit = AuralKit(implementation: .legacy)
-```
-
-### Live Transcription
-
-For continuous transcription, use the AsyncStream-based API:
-
-```swift
-import AuralKit
-
-let auralKit = AuralKit()
-
-// Start live transcription
-let stream = try await auralKit.startLiveTranscription()
-
-// Process results as they arrive
-for await result in stream {
-    print("Text: \(result.text)")
-    print("Confidence: \(result.confidence)")
-    print("Is partial: \(result.isPartial)")
+for try await result in kit.transcribe() {
+    print(result.isFinal ? "Final: \(result.text)" : "Partial: \(result.text)")
+    
+    // Access all properties from Apple's API:
+    // result.range - Audio time range
+    // result.alternatives - Alternative transcriptions
+    // result.resultsFinalizationTime - Finalization timestamp
 }
 
-// Stop when done
-try await auralKit.stopTranscription()
+// Stop when needed
+kit.stop()
 ```
 
-### Live Transcription with SwiftUI
+### SwiftUI Example
 
 ```swift
 import SwiftUI
 import AuralKit
 
 struct ContentView: View {
-    @State private var auralKit = AuralKit()
+    @State private var kit = AuralKit()
+    @State private var transcribedText = ""
     @State private var isTranscribing = false
     
     var body: some View {
         VStack(spacing: 20) {
-            Text(auralKit.currentText.isEmpty ? "Tap to start speaking..." : auralKit.currentText)
+            Text(transcribedText.isEmpty ? "Tap to start..." : transcribedText)
                 .padding()
                 .frame(maxWidth: .infinity, minHeight: 100)
                 .background(Color.gray.opacity(0.1))
                 .cornerRadius(10)
             
             Button(action: toggleTranscription) {
-                HStack {
-                    Image(systemName: isTranscribing ? "stop.circle.fill" : "mic.circle.fill")
-                    Text(isTranscribing ? "Stop" : "Start")
-                }
-                .padding()
-                .background(isTranscribing ? Color.red : Color.blue)
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                Label(isTranscribing ? "Stop" : "Start", 
+                      systemImage: isTranscribing ? "stop.circle.fill" : "mic.circle.fill")
+                    .padding()
+                    .background(isTranscribing ? Color.red : Color.blue)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
             }
         }
         .padding()
     }
     
     func toggleTranscription() {
-        Task {
-            do {
-                if isTranscribing {
-                    try await auralKit.stopTranscription()
-                    isTranscribing = false
-                } else {
-                    isTranscribing = true
-                    let stream = try await auralKit.startLiveTranscription()
-                    
-                    // Process transcription results as they arrive
-                    for await result in stream {
-                        // currentText is automatically updated by AuralKit
-                        // You can also access result properties directly:
-                        // result.text, result.confidence, result.isPartial
+        if isTranscribing {
+            kit.stop()
+            isTranscribing = false
+        } else {
+            isTranscribing = true
+            Task {
+                do {
+                    for try await result in kit.transcribe() {
+                        transcribedText = String(result.text.characters)
                     }
+                } catch {
+                    print("Error: \(error)")
                 }
-            } catch {
-                print("Error: \(error)")
                 isTranscribing = false
             }
         }
@@ -137,16 +110,76 @@ struct ContentView: View {
 }
 ```
 
-## Requirements
+## API Reference
 
-- iOS 17.0+ / macOS 14.0+ / visionOS 1.1+
-- Swift 6.0+
-- Microphone permission
-- Speech recognition permission
+### Configuration
+
+```swift
+let kit = AuralKit()
+    .language(_ language: AuralLanguage)         // Set language (e.g., .spanish, .french)
+    .locale(_ locale: Locale)                    // Or use custom locale
+    .includePartialResults(_ include: Bool)      // Show interim results (default: true)
+    .includeTimestamps(_ include: Bool)          // Include timing info (default: false)
+```
+
+### Methods
+
+```swift
+// Start transcription
+func transcribe() -> AsyncThrowingStream<AuralResult, Error>
+
+// Stop transcription  
+func stop()
+
+// Convenience property
+var transcriptions: AsyncThrowingStream<AuralResult, Error>
+```
+
+### AuralResult Properties
+
+```swift
+struct AuralResult {
+    let text: AttributedString           // Transcribed text
+    let isFinal: Bool                   // Final (true) or volatile (false)
+    let range: CMTimeRange              // Audio time range
+    let alternatives: [AttributedString] // Alternative transcriptions
+    let resultsFinalizationTime: CMTime // When results were finalized
+}
+```
+
+**Note on Legacy API (iOS 17-25):**
+When using devices running iOS 17-25, some properties have limited support:
+- `text` and `isFinal` are fully supported
+- `range` returns an empty/invalid `CMTimeRange()`
+- `alternatives` returns an empty array
+- `resultsFinalizationTime` returns `.zero`
+
+You can check if timing data is available:
+```swift
+if result.range.isValid {
+    // Full data from iOS 26+ API
+} else {
+    // Limited data from legacy API
+}
+```
+
+### Supported Languages
+
+```swift
+// Major languages
+.english, .spanish, .french, .german, .italian, .portuguese, .chinese, .japanese, .korean
+
+// Regional variants
+.englishUK, .englishAustralia, .spanishMexico, .frenchCanada, .chineseTraditional
+
+// Many more including:
+.arabic, .dutch, .hindi, .russian, .swedish, .turkish, .polish, .hebrew, .thai
+// ... and 30+ other languages
+```
 
 ## Permissions
 
-Add these keys to your `Info.plist`:
+Add to your `Info.plist`:
 
 ```xml
 <key>NSMicrophoneUsageDescription</key>
@@ -156,20 +189,27 @@ Add these keys to your `Info.plist`:
 <string>This app needs speech recognition to convert your speech to text.</string>
 ```
 
+## Requirements
+
+- iOS 17.0+ / macOS 14.0+ / visionOS 1.1+
+- Swift 6.0+
+- Microphone and speech recognition permissions
+
 ## Error Handling
 
 ```swift
 do {
-    let text = try await AuralKit.startTranscribing()
+    for try await result in AuralKit.transcribe() {
+        print(result.text)
+    }
 } catch AuralError.permissionDenied {
-    // Handle permission denied
-} catch AuralError.recognitionFailed {
-    // Handle recognition failure
+    print("Please grant microphone and speech recognition permissions")
+} catch AuralError.unsupportedLanguage {
+    print("Language not supported")
 } catch {
-    // Handle other errors
+    print("Error: \(error)")
 }
 ```
-
 
 ## License
 
