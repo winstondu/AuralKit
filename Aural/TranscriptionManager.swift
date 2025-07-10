@@ -31,9 +31,7 @@ class TranscriptionManager {
         currentTranscript = ""
         volatileText = ""
         finalizedText = ""
-        currentAlternatives = []
         currentTimeRange = ""
-        
         
         // Create configured AuralKit instance
         auralKit = AuralKit(locale: selectedLocale)

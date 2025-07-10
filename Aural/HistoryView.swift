@@ -19,11 +19,7 @@ struct HistoryView: View {
         NavigationStack {
             Group {
                 if manager.transcriptionHistory.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Transcriptions", systemImage: "doc.text")
-                    } description: {
-                        Text("Your transcription history will appear here")
-                    }
+                  Text("Hello")
                 } else {
                     List {
                         ForEach(filteredHistory) { record in
@@ -39,12 +35,12 @@ struct HistoryView: View {
                                             .padding(.vertical, 2)
                                             .background(Color.blue.opacity(0.1))
                                             .cornerRadius(4)
-                                        
+
                                         Spacer()
                                         
                                         Text(record.timestamp, style: .relative)
                                             .font(.caption)
-                                            .foregroundColor(.secondary)
+                                            .foregroundStyle(.secondary)
                                     }
                                     
                                     Text(record.text)
