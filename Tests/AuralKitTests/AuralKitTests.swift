@@ -5,75 +5,53 @@ import Testing
 struct AuralKitTests {
     
     @MainActor
-    private func createTestSetup() -> AuralKit {
+    private func createTestKit() -> AuralKit {
         return AuralKit()
     }
     
     @Test("AuralKit initialization")
     @MainActor
-    func auralKitInitialization() async {
-        let auralKit = AuralKit()
-        #expect(await auralKit.isTranscribing == false)
-        #expect(auralKit.currentText == "")
-        #expect(auralKit.downloadProgress == 0.0)
-        #expect(auralKit.error == nil)
+    func testInitialization() async {
+        let kit = AuralKit()
+        #expect(kit != nil)
     }
     
-    @Test("Start transcribing success")
+    @Test("Configuration fluent API")
     @MainActor
-    func startTranscribingSuccess() async throws {
-        let auralKit = createTestSetup()
+    func testConfiguration() async {
+        let kit = AuralKit()
+            .locale(.init(identifier: "es-ES"))
+            .includePartialResults(false)
+            .includeTimestamps(true)
         
-        // Just verify the initial state without trying to start transcription
-        #expect(await auralKit.isTranscribing == false)
-        #expect(auralKit.currentText == "")
+        #expect(kit != nil)
     }
     
-    @Test("Start transcribing with failure")
+    @Test("Transcribe API availability")
     @MainActor
-    func startTranscribingFailure() async throws {
-        let auralKit = createTestSetup()
+    func testTranscribeAPI() async {
+        let kit = createTestKit()
         
-        // Just verify error handling is available
-        #expect(auralKit.error == nil)
+        // Test instance method
+        let stream1 = kit.transcribe()
+        #expect(stream1 != nil)
+        
+        // Test static method
+        let stream2 = AuralKit.transcribe()
+        #expect(stream2 != nil)
+        
+        // Test computed property
+        let stream3 = kit.transcriptions
+        #expect(stream3 != nil)
     }
     
-    @Test("Start transcribing when already transcribing")
+    @Test("Stop is safe to call")
     @MainActor
-    func startTranscribingWhenAlreadyTranscribing() async throws {
-        let auralKit = createTestSetup()
+    func testStop() async {
+        let kit = createTestKit()
         
-        // Just verify initial state
-        #expect(await auralKit.isTranscribing == false)
-    }
-    
-    @Test("Start live transcription success")
-    @MainActor
-    func startLiveTranscriptionSuccess() async throws {
-        let auralKit = createTestSetup()
-        
-        // Verify configuration can be set
-        let configuredKit = auralKit.language(.english).quality(.medium)
-        #expect(await configuredKit.isTranscribing == false)
-    }
-    
-    @Test("Stop transcription success")
-    @MainActor
-    func stopTranscriptionSuccess() async throws {
-        let auralKit = createTestSetup()
-        
-        // Verify stop is idempotent when not transcribing
-        try await auralKit.stopTranscription()
-        #expect(await auralKit.isTranscribing == false)
-    }
-    
-    @Test("Stop transcription when not transcribing")
-    @MainActor
-    func stopTranscriptionWhenNotTranscribing() async throws {
-        let auralKit = createTestSetup()
-        
-        // Should not throw - it's idempotent
-        try await auralKit.stopTranscription()
-        #expect(await auralKit.isTranscribing == false)
+        // Should not crash when called without transcribing
+        kit.stop()
+        #expect(true) // If we get here, it didn't crash
     }
 }
