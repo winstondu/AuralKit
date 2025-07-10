@@ -4,6 +4,8 @@ import AuralKit
 struct TranscriptionView: View {
     @EnvironmentObject var manager: TranscriptionManager
     @State private var animationScale: CGFloat = 1.0
+    @State private var showAlternatives = false
+    @State private var showPermissionsAlert = false
     
     var body: some View {
         NavigationStack {
@@ -22,13 +24,43 @@ struct TranscriptionView: View {
                         }
                         
                         if !manager.volatileText.isEmpty {
-                            HStack(spacing: 8) {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text(manager.volatileText)
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                                    .italic()
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 8) {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                    Text(manager.volatileText)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                        .italic()
+                                }
+                                
+                                // Show time range if available
+                                if !manager.currentTimeRange.isEmpty {
+                                    Label(manager.currentTimeRange, systemImage: "clock")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                
+                                // Show alternatives if available
+                                if !manager.currentAlternatives.isEmpty && showAlternatives {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Alternatives:")
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                        ForEach(Array(manager.currentAlternatives.prefix(3).enumerated()), id: \.offset) { index, alternative in
+                                            HStack {
+                                                Text("\(index + 1).")
+                                                    .font(.caption2)
+                                                    .foregroundColor(.secondary)
+                                                Text(alternative)
+                                                    .font(.caption)
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                    }
+                                    .padding(.top, 4)
+                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding()
@@ -54,8 +86,28 @@ struct TranscriptionView: View {
                 }
                 .frame(maxHeight: .infinity)
                 
-                // Error Display
-                if let error = manager.error {
+                // Error or Permission Display
+                if manager.permissionStatus == .denied || manager.permissionStatus == .restricted {
+                    VStack(spacing: 8) {
+                        Label("Permissions Required", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(.orange)
+                        Text("Microphone and speech recognition permissions are required")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Button("Open Settings") {
+                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                UIApplication.shared.open(url)
+                            }
+                        }
+                        .font(.caption)
+                        .buttonStyle(.bordered)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                } else if let error = manager.error {
                     Text(error)
                         .font(.caption)
                         .foregroundColor(.red)
@@ -76,9 +128,16 @@ struct TranscriptionView: View {
                             .foregroundColor(.secondary)
                         Spacer()
                         Menu {
-                            ForEach(commonLanguages, id: \.self) { language in
-                                Button(language.displayName) {
+                            ForEach(commonLanguages.filter { $0.isSupported }, id: \.self) { language in
+                                Button {
                                     manager.selectedLanguage = language
+                                } label: {
+                                    HStack {
+                                        Text(language.displayName)
+                                        if language == manager.selectedLanguage {
+                                            Image(systemName: "checkmark")
+                                        }
+                                    }
                                 }
                             }
                             Divider()
@@ -89,6 +148,11 @@ struct TranscriptionView: View {
                             HStack {
                                 Text(manager.selectedLanguage.displayName)
                                     .foregroundColor(.primary)
+                                if !manager.selectedLanguage.isSupported {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
                                 Image(systemName: "chevron.down")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
@@ -114,7 +178,7 @@ struct TranscriptionView: View {
                                 .foregroundColor(.white)
                         }
                     }
-                    .disabled(manager.error != nil)
+                    .disabled(manager.error != nil || manager.permissionStatus != .authorized)
                     
                     // Status Text
                     Text(manager.isTranscribing ? "Listening..." : "Tap to start")
@@ -129,11 +193,26 @@ struct TranscriptionView: View {
             .navigationTitle("AuralKit Demo")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                if !manager.currentTranscript.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if !manager.currentTranscript.isEmpty {
                         ShareLink(item: manager.currentTranscript) {
                             Image(systemName: "square.and.arrow.up")
                         }
+                    }
+                    
+                    Menu {
+                        Toggle("Show Alternatives", isOn: $showAlternatives)
+                            .disabled(manager.currentAlternatives.isEmpty)
+                        
+                        if manager.isIOS26Available {
+                            Label("iOS 26+ Features Active", systemImage: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        } else {
+                            Label("iOS 26+ Features Unavailable", systemImage: "xmark.circle")
+                                .foregroundColor(.secondary)
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }

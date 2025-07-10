@@ -11,13 +11,21 @@ struct SettingsView: View {
                 Section("Transcription Options") {
                     Toggle("Include Partial Results", isOn: $manager.includePartialResults)
                     Toggle("Include Timestamps", isOn: $manager.includeTimestamps)
-                        .disabled(true)
+                        .disabled(!manager.isIOS26Available)
                         .overlay(alignment: .trailing) {
-                            Text("iOS 26+")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.trailing, 40)
+                            if !manager.isIOS26Available {
+                                Text("iOS 26+")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.trailing, 40)
+                            }
                         }
+                    
+                    if manager.isIOS26Available {
+                        Label("iOS 26 features enabled", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                    }
                 }
                 
                 Section("Default Language") {
@@ -27,8 +35,15 @@ struct SettingsView: View {
                         HStack {
                             Text("Language")
                             Spacer()
-                            Text(manager.selectedLanguage.displayName)
-                                .foregroundColor(.secondary)
+                            HStack(spacing: 4) {
+                                Text(manager.selectedLanguage.displayName)
+                                    .foregroundColor(.secondary)
+                                if !manager.selectedLanguage.isSupported {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                }
+                            }
                         }
                     }
                 }

@@ -45,6 +45,17 @@ struct TranscriptionDetailView: View {
                         Text("\(record.text.split(separator: " ").count) words")
                             .font(.body)
                     }
+                    
+                    if !record.timeRange.isEmpty {
+                        HStack {
+                            Label("Duration", systemImage: "timer")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Text(record.timeRange)
+                                .font(.body)
+                        }
+                    }
                 }
                 .padding()
                 .background(Color.gray.opacity(0.1))
@@ -62,6 +73,34 @@ struct TranscriptionDetailView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.gray.opacity(0.05))
                         .cornerRadius(12)
+                }
+                
+                // Alternatives
+                if !record.alternatives.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Alternative Interpretations")
+                            .font(.headline)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(record.alternatives.prefix(5).enumerated()), id: \.offset) { index, alternative in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Text("\(index + 1).")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .frame(width: 20, alignment: .trailing)
+                                    
+                                    Text(alternative)
+                                        .font(.body)
+                                        .foregroundColor(.secondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(.vertical, 4)
+                            }
+                        }
+                        .padding()
+                        .background(Color.blue.opacity(0.05))
+                        .cornerRadius(12)
+                    }
                 }
                 
                 // Actions

@@ -5,12 +5,15 @@ struct LanguageListView: View {
     @Binding var selectedLanguage: AuralLanguage
     @Environment(\.dismiss) var dismiss
     @State private var searchText = ""
+    @State private var showOnlySupported = false
     
     var filteredLanguages: [AuralLanguage] {
+        let languages = showOnlySupported ? AuralLanguage.supportedLanguages : AuralLanguage.allCases
+        
         if searchText.isEmpty {
-            return AuralLanguage.allCases
+            return languages
         } else {
-            return AuralLanguage.allCases.filter { language in
+            return languages.filter { language in
                 language.displayName.localizedCaseInsensitiveContains(searchText)
             }
         }
@@ -25,8 +28,16 @@ struct LanguageListView: View {
                 } label: {
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(language.displayName)
-                                .foregroundColor(.primary)
+                            HStack(spacing: 4) {
+                                Text(language.displayName)
+                                    .foregroundColor(language.isSupported ? .primary : .secondary)
+                                if !language.isSupported {
+                                    Label("Not available", systemImage: "exclamationmark.triangle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.orange)
+                                        .labelStyle(.iconOnly)
+                                }
+                            }
                             Text(language.rawValue)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
@@ -47,6 +58,12 @@ struct LanguageListView: View {
             .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Toggle("Supported Only", isOn: $showOnlySupported)
+                        .toggleStyle(.switch)
+                        .font(.caption)
+                }
+                
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
                         dismiss()
