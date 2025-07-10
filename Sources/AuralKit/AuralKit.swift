@@ -400,23 +400,20 @@ extension AuralKit {
     }
   }
 
-  /// Starts live speech transcription with real-time result callbacks.
+  /// Starts live speech transcription with real-time result stream.
   ///
   /// This method begins continuous speech recognition, delivering results
-  /// through the provided callback as they become available. The transcription
+  /// through an AsyncStream as they become available. The transcription
   /// continues until explicitly stopped.
   ///
-  /// - Parameter onResult: Callback function that receives transcription results
+  /// - Returns: An AsyncStream of AuralResult for live transcription updates
   /// - Throws: AuralError if transcription fails or is already in progress
-  public func startLiveTranscription(onResult: @escaping @MainActor @Sendable (AuralResult) -> Void)
-    async throws
-  {
+  public func startLiveTranscription() async throws -> AsyncStream<AuralResult> {
     guard !(await stateManager.isTranscribing()) else {
       throw AuralError.recognitionFailed
     }
 
     error = nil
-    liveTranscriptionHandler = onResult
 
     do {
       try await prepareForTranscription()
@@ -451,15 +448,39 @@ extension AuralKit {
         }
       }
 
-      transcriptionTask = Task { @MainActor in
+      // Create stream with buffering policy
+      let (stream, continuation) = AsyncStream<AuralResult>.makeStream(
+        bufferingPolicy: .bufferingNewest(10)
+      )
+      
+      transcriptionTask = Task { [weak self] in
+        defer {
+          continuation.finish()
+        }
+        
         do {
-          let results = engine.speechAnalyzer.results
-          for try await result in results {
+          for try await result in engine.speechAnalyzer.results {
+            guard let self = self else { break }
+            
             if configuration.includePartialResults || !result.isPartial {
-              onResult(result)
-              currentText = result.text
+              // Update current text
+              await MainActor.run {
+                self.currentText = result.text
+              }
+              
+              // Yield result to stream
+              continuation.yield(AuralResult(
+                text: result.text,
+                confidence: result.confidence,
+                isPartial: result.isPartial,
+                timestamp: result.timestamp
+              ))
             }
           }
+        } catch {
+          Self.logger.error("Transcription stream error: \(error)")
+          // Don't throw here, just finish the stream
+          continuation.finish()
         }
       }
       
@@ -479,18 +500,21 @@ extension AuralKit {
           
           guard let self = self else { break }
           
+          let currentTextSnapshot = await MainActor.run { self.currentText }
           let timeSinceLastUpdate = Date().timeIntervalSince(lastUpdateTime)
-          if timeSinceLastUpdate > 30 {
-            Self.logger.warning("No transcription results for \(Int(timeSinceLastUpdate)) seconds")
+          
+          if timeSinceLastUpdate > 30 && currentTextSnapshot == previousText {
+            Self.logger.warning("No new transcription results for \(Int(timeSinceLastUpdate)) seconds")
           }
           
-          // Update time when we get new text
-          if self.currentText != previousText {
+          if currentTextSnapshot != previousText {
             lastUpdateTime = Date()
-            previousText = self.currentText
+            previousText = currentTextSnapshot
           }
         }
       }
+      
+      return stream
 
     } catch let auralError as AuralError {
       error = auralError
@@ -524,8 +548,6 @@ extension AuralKit {
     guard await stateManager.isTranscribing() else { return }
 
     defer {
-      // State managed by state manager
-      liveTranscriptionHandler = nil
       Task {
         await stateManager.completeStop()
         await engine.cleanup()
@@ -535,11 +557,10 @@ extension AuralKit {
     // Begin stopping process
     await stateManager.beginStopping()
 
-    // Cancel monitoring task
+    // Cancel internal tasks
     cancellationTask?.cancel()
     cancellationTask = nil
     
-    // Cancel transcription task
     transcriptionTask?.cancel()
     transcriptionTask = nil
 

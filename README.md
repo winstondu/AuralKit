@@ -56,6 +56,29 @@ let modernKit = AuralKit(implementation: .modern)
 let legacyKit = AuralKit(implementation: .legacy)
 ```
 
+### Live Transcription
+
+For continuous transcription, use the AsyncStream-based API:
+
+```swift
+import AuralKit
+
+let auralKit = AuralKit()
+
+// Start live transcription
+let stream = try await auralKit.startLiveTranscription()
+
+// Process results as they arrive
+for await result in stream {
+    print("Text: \(result.text)")
+    print("Confidence: \(result.confidence)")
+    print("Is partial: \(result.isPartial)")
+}
+
+// Stop when done
+try await auralKit.stopTranscription()
+```
+
 ### Live Transcription with SwiftUI
 
 ```swift
@@ -95,13 +118,19 @@ struct ContentView: View {
                     try await auralKit.stopTranscription()
                     isTranscribing = false
                 } else {
-                    try await auralKit.startLiveTranscription { result in
-                        // Update UI with transcribed text
-                    }
                     isTranscribing = true
+                    let stream = try await auralKit.startLiveTranscription()
+                    
+                    // Process transcription results as they arrive
+                    for await result in stream {
+                        // currentText is automatically updated by AuralKit
+                        // You can also access result properties directly:
+                        // result.text, result.confidence, result.isPartial
+                    }
                 }
             } catch {
                 print("Error: \(error)")
+                isTranscribing = false
             }
         }
     }
