@@ -2,6 +2,7 @@ import SwiftUI
 import AuralKit
 import CoreMedia
 
+@available(iOS 26.0, macOS 26.0, *)
 @Observable
 class TranscriptionManager {
     var isTranscribing = false
@@ -9,26 +10,18 @@ class TranscriptionManager {
     var volatileText = ""
     var finalizedText = ""
     var transcriptionHistory: [TranscriptionRecord] = []
-    var selectedLanguage: AuralLanguage = .english
+    var selectedLocale: Locale = .current
     var includePartialResults = true
-    var includeTimestamps = false
+    var includeTimestamps = true
+    var includeAlternatives = true
     var error: String?
     var currentAlternatives: [String] = []
     var currentTimeRange = ""
-    var isIOS26Available = false
     
     private var transcriptionTask: Task<Void, Never>?
     private var auralKit: AuralKit?
     
-    init() {
-        checkIOS26Availability()
-    }
-    
-    private func checkIOS26Availability() {
-        if #available(iOS 26.0, *) {
-            isIOS26Available = true
-        }
-    }
+    init() {}
     
     var fullTranscript: String {
         finalizedText + (volatileText.isEmpty ? "" : " " + volatileText)
@@ -48,9 +41,9 @@ class TranscriptionManager {
         
         // Create configured AuralKit instance
         auralKit = AuralKit()
-            .language(selectedLanguage)
+            .locale(selectedLocale)
             .includePartialResults(includePartialResults)
-            .includeTimestamps(includeTimestamps && isIOS26Available)
+            .includeTimestamps(includeTimestamps)
         
         transcriptionTask = Task {
             do {
@@ -76,24 +69,26 @@ class TranscriptionManager {
     }
     
     private func handleTranscriptionResult(_ result: AuralResult) {
+        let text = result.text.string
         if result.isFinal {
-            finalizedText += (finalizedText.isEmpty ? "" : " ") + String(result.text.characters)
+            finalizedText += (finalizedText.isEmpty ? "" : " ") + text
             volatileText = ""
         } else {
-            volatileText = String(result.text.characters)
+            volatileText = text
         }
         currentTranscript = fullTranscript
         
-        // Handle alternatives
-        currentAlternatives = result.alternatives.map { String($0.characters) }
+        // Clear alternatives (not supported in new API)
+        currentAlternatives = []
         
-        // Handle time range if available
-        if result.range.duration.seconds > 0 {
-            let start = formatTime(result.range.start)
-            let end = formatTime(result.range.end)
-            currentTimeRange = "\(start) - \(end)"
-        } else {
-            currentTimeRange = ""
+        // Extract time range from AttributedString if available
+        currentTimeRange = ""
+        result.text.runs.forEach { run in
+            if let audioRange = run.audioTimeRange {
+                let start = formatTime(audioRange.start)
+                let end = formatTime(audioRange.end)
+                currentTimeRange = "\(start) - \(end)"
+            }
         }
     }
     
@@ -116,7 +111,7 @@ class TranscriptionManager {
             let record = TranscriptionRecord(
                 id: UUID(),
                 text: currentTranscript,
-                language: selectedLanguage,
+                locale: selectedLocale,
                 timestamp: Date(),
                 alternatives: currentAlternatives,
                 timeRange: currentTimeRange
@@ -145,19 +140,19 @@ class TranscriptionManager {
 struct TranscriptionRecord: Identifiable, Codable {
     let id: UUID
     let text: String
-    let languageCode: String
+    let localeIdentifier: String
     let timestamp: Date
     let alternatives: [String]
     let timeRange: String
     
-    var language: AuralLanguage? {
-        AuralLanguage.allCases.first { $0.rawValue == languageCode }
+    var locale: Locale {
+        Locale(identifier: localeIdentifier)
     }
     
-    init(id: UUID, text: String, language: AuralLanguage, timestamp: Date, alternatives: [String] = [], timeRange: String = "") {
+    init(id: UUID, text: String, locale: Locale, timestamp: Date, alternatives: [String] = [], timeRange: String = "") {
         self.id = id
         self.text = text
-        self.languageCode = language.rawValue
+        self.localeIdentifier = locale.identifier
         self.timestamp = timestamp
         self.alternatives = alternatives
         self.timeRange = timeRange
