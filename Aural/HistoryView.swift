@@ -19,7 +19,9 @@ struct HistoryView: View {
         NavigationStack {
             Group {
                 if manager.transcriptionHistory.isEmpty {
-                  Text("Hello")
+                    ContentUnavailableView("No Transcriptions Yet", 
+                                         systemImage: "text.quote", 
+                                         description: Text("Your transcription history will appear here"))
                 } else {
                     List {
                         ForEach(filteredHistory) { record in
@@ -28,7 +30,7 @@ struct HistoryView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 8) {
                                     HStack {
-                                        Text(record.language?.displayName ?? record.languageCode)
+                                        Text(record.locale.localizedString(forIdentifier: record.locale.identifier) ?? record.locale.identifier)
                                             .font(.caption)
                                             .foregroundColor(.secondary)
                                             .padding(.horizontal, 8)

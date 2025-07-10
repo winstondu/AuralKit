@@ -24,7 +24,7 @@ public final class AuralKit: @unchecked Sendable {
     /// Start transcribing
     public func startTranscribing() -> AsyncThrowingStream<AttributedString, Error> {
         AsyncThrowingStream { continuation in
-            Task { @MainActor in
+            Task {
                 do {
                     // Request permissions
                     try await requestPermissions()
