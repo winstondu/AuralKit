@@ -59,7 +59,7 @@ public final class AuralKit: @unchecked Sendable {
                     }
                     
                     // Allocate the locale
-                    try await AssetInventory.allocate(locales: [self.locale])
+                    try await AssetInventory.allocate(locale: self.locale)
                     
                     // Get best audio format
                     guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
