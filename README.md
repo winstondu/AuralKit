@@ -1,12 +1,40 @@
 # AuralKit
 
-A simple Swift wrapper for speech-to-text transcription using Apple's Speech APIs.
+![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)
+![Platforms](https://img.shields.io/badge/Platforms-iOS%2017%2B%20|%20macOS%2014%2B%20|%20visionOS%201.1%2B-blue.svg)
+![License](https://img.shields.io/badge/License-MIT-green.svg)
+[![GitHub release](https://img.shields.io/github/release/rryam/AuralKit.svg)](https://github.com/rryam/AuralKit/releases)
+
+A simple, lightweight Swift wrapper for speech-to-text transcription using Apple's Speech APIs.
+
+## ✨ Features
+
+- 🎯 **Simple one-line API** for speech transcription
+- 🔄 **Automatic API selection** based on iOS version
+- 🌍 **40+ languages** supported out of the box
+- ⚡ **Real-time transcription** with partial results
+- 📱 **Native Apple types** - no custom wrappers
+- 🧹 **Minimal footprint** - only ~450 lines of code
+- 🔐 **Privacy-focused** - all processing happens on-device
 
 ## Overview
 
 AuralKit provides a clean, minimal API for adding speech transcription to your app. It automatically uses the best available speech recognition technology:
 - **iOS 26+/macOS 26+**: Uses the new `SpeechAnalyzer` and `SpeechTranscriber` APIs
 - **Earlier versions**: Falls back to `SFSpeechRecognizer`
+
+## 🚀 Quick Start
+
+```swift
+import AuralKit
+
+// Start transcribing in one line
+for try await result in AuralKit.transcribe() {
+    print(result.text)
+}
+```
+
+That's it! AuralKit handles permissions, audio setup, and API selection automatically.
 
 ## Installation
 
@@ -21,7 +49,7 @@ Or add it to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/rryam/AuralKit", from: "1.0.0")
+    .package(url: "https://github.com/rryam/AuralKit", from: "1.0.1")
 ]
 ```
 
@@ -40,10 +68,13 @@ for try await result in AuralKit.transcribe() {
 
 ### With Configuration
 
+> **Note**: Configuration requires AuralKit 1.0.1+. For 1.0.0, use the static method.
+
 ```swift
 let kit = AuralKit()
     .language(.spanish)  // or .locale(Locale(identifier: "es-ES"))
     .includePartialResults(false)
+    .includeTimestamps(true)  // iOS 26+ only
 
 for try await result in kit.transcribe() {
     print(result.isFinal ? "Final: \(result.text)" : "Partial: \(result.text)")
@@ -57,6 +88,25 @@ for try await result in kit.transcribe() {
 // Stop when needed
 kit.stop()
 ```
+
+## 📱 Demo App
+
+Check out the included **Aural** demo app to see AuralKit in action! The demo showcases:
+
+- **Live Transcription**: Real-time speech-to-text with visual distinction between partial and final results
+- **Language Selection**: Switch between 40+ languages on the fly
+- **History Tracking**: View and search through past transcriptions
+- **Export & Share**: Share transcriptions via standard iOS share sheet
+- **Beautiful UI**: Tab-based interface with smooth animations
+
+### Running the Demo
+
+1. Open `Aural.xcodeproj` in the `Aural` directory
+2. Build and run on your iOS device or simulator
+3. Grant microphone and speech recognition permissions
+4. Start transcribing!
+
+<img src="https://github.com/rryam/AuralKit/assets/demo-screenshot.png" width="300" alt="AuralKit Demo App">
 
 ### SwiftUI Example
 
@@ -203,14 +253,63 @@ do {
         print(result.text)
     }
 } catch AuralError.permissionDenied {
-    print("Please grant microphone and speech recognition permissions")
+    // Handle permission denied
+    print("Please grant microphone and speech recognition permissions in Settings")
 } catch AuralError.unsupportedLanguage {
-    print("Language not supported")
+    // Handle unsupported language
+    print("Selected language is not supported on this device")
+} catch AuralError.modelNotAvailable {
+    // Handle model not available
+    print("Speech recognition model is not available. Please check internet connection.")
 } catch {
-    print("Error: \(error)")
+    // Handle other errors
+    print("Transcription error: \(error.localizedDescription)")
 }
 ```
 
-## License
+## 🔧 Troubleshooting
 
-MIT License. See LICENSE file for details.
+### Common Issues
+
+1. **"AuralKit initializer is inaccessible"**
+   - Make sure you're using AuralKit 1.0.1+ which includes the public initializer
+   - For 1.0.0, use the static method: `AuralKit.transcribe()`
+
+2. **No transcription results**
+   - Ensure microphone and speech recognition permissions are granted
+   - Check that the device has an active internet connection (for initial model download)
+   - Verify the selected language is supported on the device
+
+3. **Partial results not showing**
+   - Some languages may not support partial results
+   - Ensure `includePartialResults(true)` is set (default behavior)
+
+4. **App crashes on start**
+   - Add required permissions to Info.plist (see Permissions section)
+   - Ensure minimum deployment target is iOS 17.0+
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
+
+### Development
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📄 License
+
+AuralKit is available under the MIT License. See the [LICENSE](LICENSE) file for more info.
+
+## 🙏 Acknowledgments
+
+- Built with ❤️ using Apple's Speech framework
+- Inspired by the need for a simple, modern speech recognition API
+- Thanks to all contributors and users of AuralKit
+
+---
+
+**Made by [Rudrank Riyam](https://github.com/rryam)**
