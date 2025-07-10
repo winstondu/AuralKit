@@ -14,7 +14,6 @@ class TranscriptionManager: ObservableObject {
     @Published var includeTimestamps = false
     @Published var error: String?
     
-    private var kit: AuralKit?
     private var transcriptionTask: Task<Void, Never>?
     
     var fullTranscript: String {
@@ -30,14 +29,10 @@ class TranscriptionManager: ObservableObject {
         volatileText = ""
         finalizedText = ""
         
-        kit = AuralKit()
-            .language(selectedLanguage)
-            .includePartialResults(includePartialResults)
-            .includeTimestamps(includeTimestamps)
-        
+        // Try using the static method directly since init might not be public
         transcriptionTask = Task {
             do {
-                for try await result in kit!.transcribe() {
+                for try await result in AuralKit.transcribe() {
                     if result.isFinal {
                         finalizedText += (finalizedText.isEmpty ? "" : " ") + String(result.text.characters)
                         volatileText = ""
@@ -56,7 +51,6 @@ class TranscriptionManager: ObservableObject {
     func stopTranscription() {
         guard isTranscribing else { return }
         
-        kit?.stop()
         transcriptionTask?.cancel()
         isTranscribing = false
         
