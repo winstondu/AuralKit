@@ -147,6 +147,22 @@ struct AuralResult {
 }
 ```
 
+**Note on Legacy API (iOS 17-25):**
+When using devices running iOS 17-25, some properties have limited support:
+- `text` and `isFinal` are fully supported
+- `range` returns an empty/invalid `CMTimeRange()`
+- `alternatives` returns an empty array
+- `resultsFinalizationTime` returns `.zero`
+
+You can check if timing data is available:
+```swift
+if result.range.isValid {
+    // Full data from iOS 26+ API
+} else {
+    // Limited data from legacy API
+}
+```
+
 ### Supported Languages
 
 ```swift
