@@ -1,5 +1,6 @@
 import SwiftUI
 import AuralKit
+import Speech
 
 struct LanguageListView: View {
     @Binding var selectedLanguage: AuralLanguage

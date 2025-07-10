@@ -7,22 +7,19 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            TranscriptionView()
-                .environmentObject(transcriptionManager)
+            TranscriptionView(manager: transcriptionManager)
                 .tabItem {
                     Label("Transcribe", systemImage: "mic.circle.fill")
                 }
                 .tag(0)
             
-            HistoryView()
-                .environmentObject(transcriptionManager)
+            HistoryView(manager: transcriptionManager)
                 .tabItem {
                     Label("History", systemImage: "clock.arrow.circlepath")
                 }
                 .tag(1)
             
-            SettingsView()
-                .environmentObject(transcriptionManager)
+            SettingsView(manager: transcriptionManager)
                 .tabItem {
                     Label("Settings", systemImage: "gear")
                 }

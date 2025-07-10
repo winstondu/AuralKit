@@ -2,7 +2,7 @@ import SwiftUI
 import AuralKit
 
 struct HistoryView: View {
-    @EnvironmentObject var manager: TranscriptionManager
+    @Bindable var manager: TranscriptionManager
     @State private var searchText = ""
     
     var filteredHistory: [TranscriptionRecord] {

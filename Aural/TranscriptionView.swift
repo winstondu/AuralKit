@@ -1,8 +1,9 @@
 import SwiftUI
 import AuralKit
+import Speech
 
 struct TranscriptionView: View {
-    @EnvironmentObject var manager: TranscriptionManager
+    @Bindable var manager: TranscriptionManager
     @State private var animationScale: CGFloat = 1.0
     @State private var showAlternatives = false
     @State private var showPermissionsAlert = false
@@ -86,8 +87,8 @@ struct TranscriptionView: View {
                 }
                 .frame(maxHeight: .infinity)
                 
-                // Error or Permission Display
-                if manager.permissionStatus == .denied || manager.permissionStatus == .restricted {
+                // Error Display
+                if false { // Permission checking is handled by AuralKit internally
                     VStack(spacing: 8) {
                         Label("Permissions Required", systemImage: "exclamationmark.triangle.fill")
                             .font(.caption.weight(.semibold))
@@ -96,9 +97,15 @@ struct TranscriptionView: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                         Button("Open Settings") {
+                            #if os(iOS)
                             if let url = URL(string: UIApplication.openSettingsURLString) {
                                 UIApplication.shared.open(url)
                             }
+                            #elseif os(macOS)
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            #endif
                         }
                         .font(.caption)
                         .buttonStyle(.bordered)
@@ -178,7 +185,7 @@ struct TranscriptionView: View {
                                 .foregroundColor(.white)
                         }
                     }
-                    .disabled(manager.error != nil || manager.permissionStatus != .authorized)
+                    .disabled(manager.error != nil)
                     
                     // Status Text
                     Text(manager.isTranscribing ? "Listening..." : "Tap to start")
@@ -187,13 +194,15 @@ struct TranscriptionView: View {
                         .padding(.bottom)
                 }
                 .padding(.vertical)
-                .background(Color(UIColor.systemBackground))
+                .background(Color(.systemBackground))
                 .shadow(color: .black.opacity(0.1), radius: 10, y: -5)
             }
             .navigationTitle("AuralKit Demo")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
+            #endif
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .automatic) {
                     if !manager.currentTranscript.isEmpty {
                         ShareLink(item: manager.currentTranscript) {
                             Image(systemName: "square.and.arrow.up")

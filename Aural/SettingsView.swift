@@ -1,8 +1,9 @@
 import SwiftUI
 import AuralKit
+import Speech
 
 struct SettingsView: View {
-    @EnvironmentObject var manager: TranscriptionManager
+    @Bindable var manager: TranscriptionManager
     @State private var showingAbout = false
     
     var body: some View {

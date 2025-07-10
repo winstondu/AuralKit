@@ -1,71 +1,32 @@
 import SwiftUI
-import Speech
 import AuralKit
-import Combine
-import AVFoundation
 import CoreMedia
 
-@MainActor
-class TranscriptionManager: ObservableObject {
-    @Published var isTranscribing = false
-    @Published var currentTranscript = ""
-    @Published var volatileText = ""
-    @Published var finalizedText = ""
-    @Published var transcriptionHistory: [TranscriptionRecord] = []
-    @Published var selectedLanguage: AuralLanguage = .english
-    @Published var includePartialResults = true
-    @Published var includeTimestamps = false
-    @Published var error: String?
-    @Published var permissionStatus: PermissionStatus = .unknown
-    @Published var currentAlternatives: [String] = []
-    @Published var currentTimeRange: String = ""
-    @Published var isIOS26Available = false
+@Observable
+class TranscriptionManager {
+    var isTranscribing = false
+    var currentTranscript = ""
+    var volatileText = ""
+    var finalizedText = ""
+    var transcriptionHistory: [TranscriptionRecord] = []
+    var selectedLanguage: AuralLanguage = .english
+    var includePartialResults = true
+    var includeTimestamps = false
+    var error: String?
+    var currentAlternatives: [String] = []
+    var currentTimeRange = ""
+    var isIOS26Available = false
     
     private var transcriptionTask: Task<Void, Never>?
     private var auralKit: AuralKit?
     
-    enum PermissionStatus {
-        case unknown
-        case authorized
-        case denied
-        case restricted
-    }
-    
     init() {
         checkIOS26Availability()
-        checkPermissions()
     }
     
     private func checkIOS26Availability() {
         if #available(iOS 26.0, *) {
             isIOS26Available = true
-        }
-    }
-    
-    private func checkPermissions() {
-        Task {
-            #if os(macOS)
-            // macOS-specific: Check if Siri and Dictation are enabled
-            guard SFSpeechRecognizer(locale: Locale.current)?.isAvailable == true else {
-                permissionStatus = .restricted
-                error = "Please enable Siri and Dictation in System Settings"
-                return
-            }
-            #endif
-            
-            let audioSession = AVAudioSession.sharedInstance()
-            let speechStatus = SFSpeechRecognizer.authorizationStatus()
-            
-            switch (audioSession.recordPermission, speechStatus) {
-            case (.granted, .authorized):
-                permissionStatus = .authorized
-            case (.denied, _), (_, .denied):
-                permissionStatus = .denied
-            case (.undetermined, _), (_, .notDetermined):
-                permissionStatus = .unknown
-            default:
-                permissionStatus = .restricted
-            }
         }
     }
     
@@ -75,10 +36,6 @@ class TranscriptionManager: ObservableObject {
     
     func startTranscription() {
         guard !isTranscribing else { return }
-        guard permissionStatus == .authorized else {
-            error = "Microphone or speech recognition permissions not granted"
-            return
-        }
         
         isTranscribing = true
         error = nil
@@ -88,23 +45,6 @@ class TranscriptionManager: ObservableObject {
         currentAlternatives = []
         currentTimeRange = ""
         
-        // Check if language is supported
-        #if os(macOS)
-        // On macOS, also check if recognizer is available
-        let recognizer = SFSpeechRecognizer(locale: selectedLanguage.locale)
-        guard recognizer?.isAvailable == true else {
-            error = "Speech recognition not available for \(selectedLanguage.displayName). Please check Siri and Dictation settings."
-            isTranscribing = false
-            return
-        }
-        #else
-        // iOS check remains the same
-        guard selectedLanguage.isSupported else {
-            error = "Selected language \(selectedLanguage.displayName) is not supported on this device"
-            isTranscribing = false
-            return
-        }
-        #endif
         
         // Create configured AuralKit instance
         auralKit = AuralKit()
