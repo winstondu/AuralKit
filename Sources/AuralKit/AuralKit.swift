@@ -171,7 +171,7 @@ public struct AuralResult: Sendable {
 // MARK: - Legacy Speech Recognizer
 
 /// Simple wrapper for legacy SFSpeechRecognizer
-internal class LegacySpeechRecognizer {
+internal class LegacySpeechRecognizer: @unchecked Sendable {
     private let recognizer: SFSpeechRecognizer
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
@@ -188,8 +188,8 @@ internal class LegacySpeechRecognizer {
 
     func startRecognition(
         includePartialResults: Bool,
-        onResult: @escaping (_ text: String, _ isPartial: Bool) -> Void,
-        onError: @escaping (Error) -> Void
+        onResult: @escaping @Sendable (_ text: String, _ isPartial: Bool) -> Void,
+        onError: @escaping @Sendable (Error) -> Void
     ) -> SFSpeechAudioBufferRecognitionRequest {
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = includePartialResults
@@ -224,7 +224,7 @@ internal class LegacySpeechRecognizer {
 // MARK: - Buffer Converter
 
 /// Converts audio buffers between formats
-internal class BufferConverter {
+internal class BufferConverter: @unchecked Sendable {
     private var converter: AVAudioConverter?
 
     func convertBuffer(_ buffer: AVAudioPCMBuffer, to format: AVAudioFormat) throws -> AVAudioPCMBuffer {
@@ -268,12 +268,12 @@ internal class BufferConverter {
 // MARK: - AuralKit
 
 /// Simple wrapper for speech-to-text transcription using Apple's APIs
-public final class AuralKit {
+public final class AuralKit: @unchecked Sendable {
 
     // MARK: - Properties
 
     private var configuration = AuralConfiguration()
-    private var audioEngine = AVAudioEngine()
+    private let audioEngine = AVAudioEngine()
     private var isTranscribing = false
 
     // For iOS 26+
@@ -282,9 +282,9 @@ public final class AuralKit {
 
     // For legacy
     private var legacyRecognizer: LegacySpeechRecognizer?
-
+    
     // MARK: - Initializer
-
+    
     public init() {}
 
     // MARK: - Configuration
@@ -492,8 +492,8 @@ public final class AuralKit {
         self.speechAnalyzer = analyzer
 
         // Monitor for stop
-        Task {
-            while isTranscribing {
+        Task { [weak self] in
+            while self?.isTranscribing == true {
                 try await Task.sleep(nanoseconds: 100_000_000)
             }
 
@@ -559,8 +559,8 @@ public final class AuralKit {
             try audioEngine.start()
 
             // Monitor for when to finish
-            Task {
-                while isTranscribing {
+            Task { [weak self] in
+                while self?.isTranscribing == true {
                     try await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
                 }
                 continuation.finish()

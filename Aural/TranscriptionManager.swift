@@ -62,11 +62,15 @@ class TranscriptionManager {
                     }
                 }
             } catch let auralError as AuralError {
-                self.error = auralError.errorDescription
-                self.isTranscribing = false
+                await MainActor.run {
+                    self.error = auralError.errorDescription
+                    self.isTranscribing = false
+                }
             } catch {
-                self.error = error.localizedDescription
-                self.isTranscribing = false
+                await MainActor.run {
+                    self.error = error.localizedDescription
+                    self.isTranscribing = false
+                }
             }
         }
     }
