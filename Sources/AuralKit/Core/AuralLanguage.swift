@@ -1,4 +1,5 @@
 import Foundation
+import Speech
 
 /// Supported languages for speech recognition
 public enum AuralLanguage: String, CaseIterable, Sendable {
@@ -61,5 +62,15 @@ public enum AuralLanguage: String, CaseIterable, Sendable {
     /// User-friendly name for the language
     public var displayName: String {
         locale.localizedString(forIdentifier: rawValue) ?? rawValue
+    }
+    
+    /// Check if this language is supported on the current device
+    public var isSupported: Bool {
+        SFSpeechRecognizer.supportedLocales().contains(locale)
+    }
+    
+    /// Get all languages that are actually supported on this device
+    public static var supportedLanguages: [AuralLanguage] {
+        allCases.filter { $0.isSupported }
     }
 }
