@@ -33,8 +33,8 @@ dependencies: [
 import AuralKit
 
 // Just one line!
-for try await text in AuralKit.transcribe() {
-    print(text)
+for try await result in AuralKit.transcribe() {
+    print(result.text)
 }
 ```
 
@@ -45,8 +45,13 @@ let kit = AuralKit()
     .language(.spanish)  // or .locale(Locale(identifier: "es-ES"))
     .includePartialResults(false)
 
-for try await (text, isFinal) in kit.transcribe() {
-    print(isFinal ? "Final: \(text)" : "Partial: \(text)")
+for try await result in kit.transcribe() {
+    print(result.isFinal ? "Final: \(result.text)" : "Partial: \(result.text)")
+    
+    // Access all properties from Apple's API:
+    // result.range - Audio time range
+    // result.alternatives - Alternative transcriptions
+    // result.resultsFinalizationTime - Finalization timestamp
 }
 
 // Stop when needed
@@ -92,8 +97,8 @@ struct ContentView: View {
             isTranscribing = true
             Task {
                 do {
-                    for try await text in kit.transcribe() {
-                        transcribedText = text
+                    for try await result in kit.transcribe() {
+                        transcribedText = String(result.text.characters)
                     }
                 } catch {
                     print("Error: \(error)")
@@ -121,13 +126,25 @@ let kit = AuralKit()
 
 ```swift
 // Start transcription
-func transcribe() -> AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error>
+func transcribe() -> AsyncThrowingStream<AuralResult, Error>
 
-// Stop transcription
+// Stop transcription  
 func stop()
 
 // Convenience property
-var transcriptions: AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error>
+var transcriptions: AsyncThrowingStream<AuralResult, Error>
+```
+
+### AuralResult Properties
+
+```swift
+struct AuralResult {
+    let text: AttributedString           // Transcribed text
+    let isFinal: Bool                   // Final (true) or volatile (false)
+    let range: CMTimeRange              // Audio time range
+    let alternatives: [AttributedString] // Alternative transcriptions
+    let resultsFinalizationTime: CMTime // When results were finalized
+}
 ```
 
 ### Supported Languages
@@ -166,8 +183,8 @@ Add to your `Info.plist`:
 
 ```swift
 do {
-    for try await text in AuralKit.transcribe() {
-        print(text)
+    for try await result in AuralKit.transcribe() {
+        print(result.text)
     }
 } catch AuralError.permissionDenied {
     print("Please grant microphone and speech recognition permissions")
