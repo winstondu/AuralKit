@@ -8,6 +8,7 @@
 import SwiftUI
 
 @main
+@available(iOS 26.0, macOS 26.0, *)
 struct AuralApp: App {
     var body: some Scene {
         WindowGroup {

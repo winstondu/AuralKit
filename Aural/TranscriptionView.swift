@@ -8,8 +8,6 @@ struct TranscriptContentView: View {
     let finalizedText: String
     let volatileText: String
     let currentTimeRange: String
-    let currentAlternatives: [String]
-    let showAlternatives: Bool
     let isTranscribing: Bool
 
     var body: some View {
@@ -27,9 +25,7 @@ struct TranscriptContentView: View {
             if !volatileText.isEmpty {
                 VolatileTextView(
                     volatileText: volatileText,
-                    currentTimeRange: currentTimeRange,
-                    currentAlternatives: currentAlternatives,
-                    showAlternatives: showAlternatives
+                    currentTimeRange: currentTimeRange
                 )
             }
 
@@ -44,8 +40,6 @@ struct TranscriptContentView: View {
 struct VolatileTextView: View {
     let volatileText: String
     let currentTimeRange: String
-    let currentAlternatives: [String]
-    let showAlternatives: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -64,38 +58,11 @@ struct VolatileTextView: View {
                     .foregroundColor(.secondary)
             }
 
-            if !currentAlternatives.isEmpty && showAlternatives {
-                AlternativesView(alternatives: currentAlternatives)
-            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Color.blue.opacity(0.1))
         .cornerRadius(12)
-    }
-}
-
-struct AlternativesView: View {
-    let alternatives: [String]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Alternatives:")
-                .font(.caption2)
-                .foregroundColor(.secondary)
-            ForEach(Array(alternatives.prefix(3).enumerated()), id: \.offset) { index, alternative in
-                HStack {
-                    Text("\(index + 1).")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(alternative)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                }
-            }
-        }
-        .padding(.top, 4)
     }
 }
 
@@ -117,7 +84,7 @@ struct EmptyStateView: View {
 
 struct LanguageSelectorView: View {
     @Bindable var manager: TranscriptionManager
-    let commonLanguages: [AuralLanguage]
+    let commonLocales: [Locale]
 
     var body: some View {
         HStack {
@@ -127,31 +94,22 @@ struct LanguageSelectorView: View {
                 .foregroundColor(.secondary)
             Spacer()
             Menu {
-                ForEach(commonLanguages.filter { $0.isSupported }, id: \.self) { language in
+                ForEach(commonLocales, id: \.identifier) { locale in
                     Button {
-                        manager.selectedLanguage = language
+                        manager.selectedLocale = locale
                     } label: {
                         HStack {
-                            Text(language.displayName)
-                            if language == manager.selectedLanguage {
+                            Text(locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
+                            if locale == manager.selectedLocale {
                                 Image(systemName: "checkmark")
                             }
                         }
                     }
                 }
-                Divider()
-                NavigationLink("All Languages...") {
-                    LanguageListView(selectedLanguage: $manager.selectedLanguage)
-                }
             } label: {
                 HStack {
-                    Text(manager.selectedLanguage.displayName)
+                    Text(manager.selectedLocale.localizedString(forIdentifier: manager.selectedLocale.identifier) ?? manager.selectedLocale.identifier)
                         .foregroundColor(.primary)
-                    if !manager.selectedLanguage.isSupported {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
                     Image(systemName: "chevron.down")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -207,13 +165,13 @@ struct ErrorView: View {
 struct ControlsView: View {
     @Bindable var manager: TranscriptionManager
     @Binding var animationScale: CGFloat
-    let commonLanguages: [AuralLanguage]
+    let commonLocales: [Locale]
 
     var body: some View {
         VStack(spacing: 20) {
             LanguageSelectorView(
                 manager: manager,
-                commonLanguages: commonLanguages
+                commonLocales: commonLocales
             )
 
             RecordButtonView(
@@ -243,7 +201,6 @@ struct ControlsView: View {
 struct TranscriptionView: View {
     @Bindable var manager: TranscriptionManager
     @State private var animationScale: CGFloat = 1.0
-    @State private var showAlternatives = false
     @State private var showPermissionsAlert = false
 
     var body: some View {
@@ -255,8 +212,6 @@ struct TranscriptionView: View {
                         finalizedText: manager.finalizedText,
                         volatileText: manager.volatileText,
                         currentTimeRange: manager.currentTimeRange,
-                        currentAlternatives: manager.currentAlternatives,
-                        showAlternatives: showAlternatives,
                         isTranscribing: manager.isTranscribing
                     )
                 }
@@ -271,7 +226,7 @@ struct TranscriptionView: View {
                 ControlsView(
                     manager: manager,
                     animationScale: $animationScale,
-                    commonLanguages: commonLanguages
+                    commonLocales: commonLocales
                 )
             }
             .navigationTitle("AuralKit Demo")
@@ -287,16 +242,8 @@ struct TranscriptionView: View {
                     }
 
                     Menu {
-                        Toggle("Show Alternatives", isOn: $showAlternatives)
-                            .disabled(manager.currentAlternatives.isEmpty)
-
-                        if manager.isIOS26Available {
-                            Label("iOS 26+ Features Active", systemImage: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                        } else {
-                            Label("iOS 26+ Features Unavailable", systemImage: "xmark.circle")
-                                .foregroundColor(.secondary)
-                        }
+                        Label("iOS 26+ Features Active", systemImage: "checkmark.circle.fill")
+                            .foregroundColor(.green)
                     } label: {
                         Image(systemName: "ellipsis.circle")
                     }
@@ -315,7 +262,17 @@ struct TranscriptionView: View {
         }
     }
 
-    var commonLanguages: [AuralLanguage] {
-        [.english, .spanish, .french, .german, .italian, .portuguese, .chinese, .japanese, .korean]
+    var commonLocales: [Locale] {
+        [
+            Locale(identifier: "en-US"),
+            Locale(identifier: "es-ES"),
+            Locale(identifier: "fr-FR"),
+            Locale(identifier: "de-DE"),
+            Locale(identifier: "it-IT"),
+            Locale(identifier: "pt-BR"),
+            Locale(identifier: "zh-CN"),
+            Locale(identifier: "ja-JP"),
+            Locale(identifier: "ko-KR")
+        ]
     }
 }

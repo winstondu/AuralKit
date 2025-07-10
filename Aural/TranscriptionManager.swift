@@ -11,11 +11,7 @@ class TranscriptionManager {
     var finalizedText = ""
     var transcriptionHistory: [TranscriptionRecord] = []
     var selectedLocale: Locale = .current
-    var includePartialResults = true
-    var includeTimestamps = true
-    var includeAlternatives = true
     var error: String?
-    var currentAlternatives: [String] = []
     var currentTimeRange = ""
     
     private var transcriptionTask: Task<Void, Never>?
@@ -40,23 +36,20 @@ class TranscriptionManager {
         
         
         // Create configured AuralKit instance
-        auralKit = AuralKit()
-            .locale(selectedLocale)
-            .includePartialResults(includePartialResults)
-            .includeTimestamps(includeTimestamps)
+        auralKit = AuralKit(locale: selectedLocale)
         
         transcriptionTask = Task {
             do {
                 guard let auralKit = auralKit else { return }
                 
-                for try await result in auralKit.transcribe() {
+                for try await attributedText in auralKit.startTranscribing() {
                     await MainActor.run {
-                        handleTranscriptionResult(result)
+                        handleTranscriptionResult(attributedText)
                     }
                 }
-            } catch let auralError as AuralError {
+            } catch let error as NSError {
                 await MainActor.run {
-                    self.error = auralError.errorDescription
+                    self.error = error.localizedDescription
                     self.isTranscribing = false
                 }
             } catch {
@@ -68,22 +61,33 @@ class TranscriptionManager {
         }
     }
     
-    private func handleTranscriptionResult(_ result: AuralResult) {
-        let text = result.text.string
-        if result.isFinal {
-            finalizedText += (finalizedText.isEmpty ? "" : " ") + text
+    private func handleTranscriptionResult(_ attributedText: AttributedString) {
+        // Check if this is volatile (partial) or final text
+        let isVolatile = attributedText.runs.contains { run in
+            run.foregroundColor != nil
+        }
+        
+        let text = String(attributedText.characters)
+        
+        if !isVolatile {
+            // Final text
+            finalizedText = text
             volatileText = ""
         } else {
-            volatileText = text
+            // Volatile text - extract only the new part
+            let finalizedLength = finalizedText.count
+            if text.count > finalizedLength {
+                let index = text.index(text.startIndex, offsetBy: finalizedLength)
+                volatileText = String(text[index...])
+            } else {
+                volatileText = text
+            }
         }
         currentTranscript = fullTranscript
         
-        // Clear alternatives (not supported in new API)
-        currentAlternatives = []
-        
         // Extract time range from AttributedString if available
         currentTimeRange = ""
-        result.text.runs.forEach { run in
+        attributedText.runs.forEach { run in
             if let audioRange = run.audioTimeRange {
                 let start = formatTime(audioRange.start)
                 let end = formatTime(audioRange.end)
@@ -104,7 +108,9 @@ class TranscriptionManager {
         guard isTranscribing else { return }
         
         transcriptionTask?.cancel()
-        auralKit?.stop()
+        Task {
+            await auralKit?.stopTranscribing()
+        }
         isTranscribing = false
         
         if !currentTranscript.isEmpty {
@@ -113,7 +119,7 @@ class TranscriptionManager {
                 text: currentTranscript,
                 locale: selectedLocale,
                 timestamp: Date(),
-                alternatives: currentAlternatives,
+                alternatives: [],
                 timeRange: currentTimeRange
             )
             transcriptionHistory.insert(record, at: 0)

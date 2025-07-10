@@ -28,7 +28,7 @@ struct MetadataSectionView: View {
             MetadataRowView(
                 label: "Language",
                 icon: "globe",
-                value: record.language?.displayName ?? record.languageCode
+                value: record.locale.localizedString(forIdentifier: record.locale.identifier) ?? record.locale.identifier
             )
 
             MetadataRowView(
@@ -169,9 +169,6 @@ struct TranscriptionDetailView: View {
 
                 TranscriptSectionView(text: record.text)
 
-                if !record.alternatives.isEmpty {
-                    AlternativesSectionView(alternatives: record.alternatives)
-                }
 
                 ActionButtonsView(text: record.text, isCopied: $isCopied)
             }

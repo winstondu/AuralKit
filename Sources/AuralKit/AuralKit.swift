@@ -46,13 +46,13 @@ public final class AuralKit: @unchecked Sendable {
                     
                     // Ensure model is available
                     let supported = await SpeechTranscriber.supportedLocales
-                    guard supported.contains(self.locale) else {
+                    guard supported.map({ $0.identifier(.bcp47) }).contains(self.locale.identifier(.bcp47)) else {
                         throw NSError(domain: "AuralKit", code: -2, userInfo: [NSLocalizedDescriptionKey: "Unsupported locale"])
                     }
                     
                     // Download model if needed
-                    let installed = await SpeechTranscriber.installedLocales
-                    if !installed.contains(self.locale) {
+                    let installed = await Set(SpeechTranscriber.installedLocales)
+                    if !installed.map({ $0.identifier(.bcp47) }).contains(self.locale.identifier(.bcp47)) {
                         if let downloader = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
                             try await downloader.downloadAndInstall()
                         }
