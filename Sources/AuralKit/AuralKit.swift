@@ -19,6 +19,10 @@ public final class AuralKit {
     // For legacy
     private var legacyRecognizer: LegacySpeechRecognizer?
     
+    // MARK: - Initializer
+    
+    public init() {}
+    
     // MARK: - Configuration
     
     public func locale(_ locale: Locale) -> Self {
