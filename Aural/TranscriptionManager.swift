@@ -57,7 +57,9 @@ class TranscriptionManager {
                 guard let auralKit = auralKit else { return }
                 
                 for try await result in auralKit.transcribe() {
-                    handleTranscriptionResult(result)
+                    await MainActor.run {
+                        handleTranscriptionResult(result)
+                    }
                 }
             } catch let auralError as AuralError {
                 self.error = auralError.errorDescription

@@ -268,7 +268,6 @@ internal class BufferConverter {
 // MARK: - AuralKit
 
 /// Simple wrapper for speech-to-text transcription using Apple's APIs
-@MainActor
 public final class AuralKit {
 
     // MARK: - Properties
@@ -473,7 +472,8 @@ public final class AuralKit {
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             guard self?.isTranscribing == true else { return }
 
-            Task {
+            // Use Task.detached to avoid dispatch queue conflicts
+            Task.detached {
                 do {
                     let converted = try converter.convertBuffer(buffer, to: analyzerFormat)
                     let input = AnalyzerInput(buffer: converted)
