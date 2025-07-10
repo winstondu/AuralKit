@@ -21,7 +21,7 @@ struct AboutView: View {
                             .font(.largeTitle)
                             .bold()
                         
-                        Text("Simple Speech-to-Text for iOS")
+                        Text("Simple Speech-to-Text for iOS & macOS")
                             .font(.headline)
                             .foregroundColor(.secondary)
                     }
@@ -48,7 +48,7 @@ struct AboutView: View {
                         FeatureRow(
                             icon: "sparkles",
                             title: "Modern & Legacy",
-                            description: "Works on iOS 17+ with automatic API selection"
+                            description: "Works on iOS 17+ and macOS 14+ with automatic API selection"
                         )
                         
                         FeatureRow(
@@ -119,9 +119,11 @@ struct AboutView: View {
                 .padding(.vertical)
             }
             .navigationTitle("About")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .automatic) {
                     Button("Done") {
                         dismiss()
                     }

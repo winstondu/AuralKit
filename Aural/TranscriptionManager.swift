@@ -1,4 +1,5 @@
 import SwiftUI
+import Speech
 import AuralKit
 import Combine
 import AVFoundation
@@ -43,6 +44,15 @@ class TranscriptionManager: ObservableObject {
     
     private func checkPermissions() {
         Task {
+            #if os(macOS)
+            // macOS-specific: Check if Siri and Dictation are enabled
+            guard SFSpeechRecognizer(locale: Locale.current)?.isAvailable == true else {
+                permissionStatus = .restricted
+                error = "Please enable Siri and Dictation in System Settings"
+                return
+            }
+            #endif
+            
             let audioSession = AVAudioSession.sharedInstance()
             let speechStatus = SFSpeechRecognizer.authorizationStatus()
             
@@ -79,11 +89,22 @@ class TranscriptionManager: ObservableObject {
         currentTimeRange = ""
         
         // Check if language is supported
+        #if os(macOS)
+        // On macOS, also check if recognizer is available
+        let recognizer = SFSpeechRecognizer(locale: selectedLanguage.locale)
+        guard recognizer?.isAvailable == true else {
+            error = "Speech recognition not available for \(selectedLanguage.displayName). Please check Siri and Dictation settings."
+            isTranscribing = false
+            return
+        }
+        #else
+        // iOS check remains the same
         guard selectedLanguage.isSupported else {
             error = "Selected language \(selectedLanguage.displayName) is not supported on this device"
             isTranscribing = false
             return
         }
+        #endif
         
         // Create configured AuralKit instance
         auralKit = AuralKit()

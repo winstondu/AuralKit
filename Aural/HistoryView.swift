@@ -64,10 +64,12 @@ struct HistoryView: View {
                 }
             }
             .navigationTitle("History")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.large)
+            #endif
             .toolbar {
                 if !manager.transcriptionHistory.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(placement: .automatic) {
                         Button {
                             manager.clearHistory()
                         } label: {

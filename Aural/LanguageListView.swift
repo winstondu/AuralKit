@@ -56,15 +56,17 @@ struct LanguageListView: View {
             }
             .searchable(text: $searchText, prompt: "Search languages")
             .navigationTitle("Select Language")
+            #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
+                ToolbarItem(placement: .automatic) {
                     Toggle("Supported Only", isOn: $showOnlySupported)
                         .toggleStyle(.switch)
                         .font(.caption)
                 }
                 
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .confirmationAction) {
                     Button("Done") {
                         dismiss()
                     }
