@@ -20,7 +20,7 @@ internal class LegacySpeechRecognizer {
     
     func startRecognition(
         includePartialResults: Bool,
-        onResult: @escaping (AuralResult) -> Void,
+        onResult: @escaping (_ text: String, _ isPartial: Bool) -> Void,
         onError: @escaping (Error) -> Void
     ) -> SFSpeechAudioBufferRecognitionRequest {
         let request = SFSpeechAudioBufferRecognitionRequest()
@@ -35,13 +35,10 @@ internal class LegacySpeechRecognizer {
             }
             
             if let result = result {
-                let auralResult = AuralResult(
-                    text: result.bestTranscription.formattedString,
-                    confidence: 1.0,
-                    isPartial: !result.isFinal,
-                    timestamp: 0
+                onResult(
+                    result.bestTranscription.formattedString,
+                    !result.isFinal
                 )
-                onResult(auralResult)
             }
         }
         

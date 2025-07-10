@@ -50,8 +50,8 @@ public final class AuralKit {
     
     // MARK: - Main Transcription Method
     
-    /// Start transcription and return a stream of text
-    public func transcribe() -> AsyncThrowingStream<String, Error> {
+    /// Start transcription and return a stream of text with metadata
+    public func transcribe() -> AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -90,7 +90,7 @@ public final class AuralKit {
     // MARK: - Private Implementation
     
     @available(iOS 26.0, macOS 26.0, *)
-    private func startModernTranscription(continuation: AsyncThrowingStream<String, Error>.Continuation) async throws {
+    private func startModernTranscription(continuation: AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error>.Continuation) async throws {
         // Create transcriber
         let transcriber = SpeechTranscriber(
             locale: configuration.locale,
@@ -133,13 +133,16 @@ public final class AuralKit {
             
             for try await result in transcriber.results {
                 if configuration.includePartialResults || result.isFinal {
-                    continuation.yield(result.text.description)
+                    continuation.yield((
+                        text: result.text,
+                        isFinal: result.isFinal
+                    ))
                 }
             }
         }
     }
     
-    private func startLegacyTranscription(continuation: AsyncThrowingStream<String, Error>.Continuation) async throws {
+    private func startLegacyTranscription(continuation: AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error>.Continuation) async throws {
         // Create legacy recognizer
         let recognizer = try LegacySpeechRecognizer(locale: configuration.locale)
         self.legacyRecognizer = recognizer
@@ -147,9 +150,12 @@ public final class AuralKit {
         // Start recognition
         let request = recognizer.startRecognition(
             includePartialResults: configuration.includePartialResults,
-            onResult: { result in
-                if self.configuration.includePartialResults || !result.isPartial {
-                    continuation.yield(result.text)
+            onResult: { text, isPartial in
+                if self.configuration.includePartialResults || !isPartial {
+                    continuation.yield((
+                        text: AttributedString(text),
+                        isFinal: !isPartial
+                    ))
                 }
             },
             onError: { error in
@@ -200,12 +206,12 @@ public final class AuralKit {
 
 public extension AuralKit {
     /// Static method for quick transcription
-    static func transcribe() -> AsyncThrowingStream<String, Error> {
+    static func transcribe() -> AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error> {
         AuralKit().transcribe()
     }
     
     /// Computed property for cleaner syntax
-    var transcriptions: AsyncThrowingStream<String, Error> {
+    var transcriptions: AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error> {
         transcribe()
     }
 }
