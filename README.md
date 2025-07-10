@@ -42,11 +42,11 @@ for try await text in AuralKit.transcribe() {
 
 ```swift
 let kit = AuralKit()
-    .locale(.init(identifier: "es-ES"))
+    .language(.spanish)  // or .locale(Locale(identifier: "es-ES"))
     .includePartialResults(false)
 
-for try await text in kit.transcribe() {
-    print(text)
+for try await (text, isFinal) in kit.transcribe() {
+    print(isFinal ? "Final: \(text)" : "Partial: \(text)")
 }
 
 // Stop when needed
@@ -111,7 +111,8 @@ struct ContentView: View {
 
 ```swift
 let kit = AuralKit()
-    .locale(_ locale: Locale)                    // Set language (default: .current)
+    .language(_ language: AuralLanguage)         // Set language (e.g., .spanish, .french)
+    .locale(_ locale: Locale)                    // Or use custom locale
     .includePartialResults(_ include: Bool)      // Show interim results (default: true)
     .includeTimestamps(_ include: Bool)          // Include timing info (default: false)
 ```
@@ -120,13 +121,27 @@ let kit = AuralKit()
 
 ```swift
 // Start transcription
-func transcribe() -> AsyncThrowingStream<String, Error>
+func transcribe() -> AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error>
 
 // Stop transcription
 func stop()
 
 // Convenience property
-var transcriptions: AsyncThrowingStream<String, Error>
+var transcriptions: AsyncThrowingStream<(text: AttributedString, isFinal: Bool), Error>
+```
+
+### Supported Languages
+
+```swift
+// Major languages
+.english, .spanish, .french, .german, .italian, .portuguese, .chinese, .japanese, .korean
+
+// Regional variants
+.englishUK, .englishAustralia, .spanishMexico, .frenchCanada, .chineseTraditional
+
+// Many more including:
+.arabic, .dutch, .hindi, .russian, .swedish, .turkish, .polish, .hebrew, .thai
+// ... and 30+ other languages
 ```
 
 ## Permissions

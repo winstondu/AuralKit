@@ -30,6 +30,15 @@ public final class AuralKit {
         return self
     }
     
+    public func language(_ language: AuralLanguage) -> Self {
+        configuration = AuralConfiguration(
+            locale: language.locale,
+            includePartialResults: configuration.includePartialResults,
+            includeTimestamps: configuration.includeTimestamps
+        )
+        return self
+    }
+    
     public func includePartialResults(_ include: Bool = true) -> Self {
         configuration = AuralConfiguration(
             locale: configuration.locale,
