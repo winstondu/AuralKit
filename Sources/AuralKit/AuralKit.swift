@@ -164,7 +164,7 @@ public final class AuralKit: @unchecked Sendable {
     #if os(iOS)
     private func setUpAudioSession() throws {
         let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers])
+        try audioSession.setCategory(.playAndRecord, mode: .spokenAudio, options: [.duckOthers, .mixWithOthers])
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
     }
     #endif
